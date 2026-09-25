@@ -1,0 +1,11 @@
+/build/
+/build-*/
+CMakeUserPresets.json
+.DS_Store
+*.user
+*.suo
+*.xcodeproj/
+*.xcworkspace/
+*.vst3/
+*.aaxplugin/
+*.component/

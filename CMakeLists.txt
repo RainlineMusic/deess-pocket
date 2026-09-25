@@ -17,7 +17,7 @@ if(DEESS_BUILD_TESTS)
     add_test(NAME deess_core_tests COMMAND deess_core_tests)
 endif()
 
-option(DEESS_BUILD_PLUGIN "Build VST3/standalone with JUCE" OFF)
+option(DEESS_BUILD_PLUGIN "Build VST3/AAX/standalone with JUCE" OFF)
 if(DEESS_BUILD_PLUGIN)
     if(DEFINED JUCE_DIR)
         add_subdirectory("${JUCE_DIR}" JUCE)
@@ -25,20 +25,28 @@ if(DEESS_BUILD_PLUGIN)
         find_package(JUCE CONFIG REQUIRED)
     endif()
     juce_add_binary_data(DeessArtwork SOURCES Design/Assets/background.png Design/Assets/dial-face.png)
-    set(DEESS_FORMATS VST3 Standalone)
+    set(DEESS_FORMATS VST3 AAX Standalone)
     if(APPLE)
         list(APPEND DEESS_FORMATS AU)
     endif()
-    if(DEFINED AAX_SDK_PATH)
-        list(APPEND DEESS_FORMATS AAX)
-    endif()
     juce_add_plugin(DeessPocket
         COMPANY_NAME "Rainline Music"
+        COMPANY_WEBSITE "https://github.com/RainlineMusic/deess-pocket"
         BUNDLE_ID "ru.rainlinemusic.deesspocket"
+        AAX_IDENTIFIER "ru.rainlinemusic.deesspocket"
         PLUGIN_MANUFACTURER_CODE RnLn
         PLUGIN_CODE DsPk
         FORMATS ${DEESS_FORMATS}
-        PRODUCT_NAME "Deess Pocket")
+        PRODUCT_NAME "Deess Pocket"
+        DESCRIPTION "Lookahead sibilance processor"
+        IS_SYNTH FALSE
+        NEEDS_MIDI_INPUT FALSE
+        NEEDS_MIDI_OUTPUT FALSE
+        IS_MIDI_EFFECT FALSE
+        EDITOR_WANTS_KEYBOARD_FOCUS FALSE
+        COPY_PLUGIN_AFTER_BUILD FALSE
+        VST3_CATEGORIES Fx Dynamics
+        AAX_CATEGORY Dynamics)
     target_sources(DeessPocket PRIVATE Source/Plugin/PluginProcessor.cpp Source/Plugin/PluginEditor.cpp)
     target_link_libraries(DeessPocket PRIVATE deess_core DeessArtwork juce::juce_audio_utils juce::juce_dsp)
     target_compile_definitions(DeessPocket PUBLIC JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)

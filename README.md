@@ -1,7 +1,7 @@
 # Deess Pocket — experimental JUCE prototype
 
 This is a new project, independent of the earlier `DeessPocket-v0.3.0` source.
-It contains a real-time C++17 DSP core, a JUCE VST3/Standalone wrapper and a
+It contains a real-time C++17 DSP core, a JUCE VST3/AAX/Standalone wrapper and a
 drawn interface based on the user's 1536 × 922 reference image.
 
 ## Build
@@ -21,10 +21,12 @@ cmake -S . -B build-plugin -DDEESS_BUILD_PLUGIN=ON -DJUCE_DIR=/path/to/JUCE
 cmake --build build-plugin --config Release
 ```
 
-If the installed JUCE exports a CMake package, `JUCE_DIR` may be omitted.
-AAX is added automatically when `AAX_SDK_PATH` is supplied. The core was
-compiled with GCC; the JUCE target could not be
-built in the present environment because the SDK and CMake are absent.
+The GitHub Actions workflow builds universal macOS (arm64 + x86_64) and Windows
+x64 VST3 and AAX plug-ins against JUCE 8.0.4, runs the DSP tests, validates
+VST3 with `pluginval`, and uploads zipped plug-ins as workflow artifacts. AAX
+is included in the same way as the existing Rainline Music JUCE project; no
+separate AAX SDK secret is required by this workflow. The CI artifacts are
+unsigned developer builds and are not notarized for end-user distribution.
 
 ## Current behavior
 
