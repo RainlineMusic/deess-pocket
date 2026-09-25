@@ -258,3 +258,50 @@ void DeessPocketEditor::paintOverChildren(juce::Graphics& g) {
                juce::Justification::centred);
 }
 
+void DeessPocketEditor::showMenu() {
+    juce::PopupMenu menu;
+    juce::PopupMenu zoomMenu, analyzer;
+    int z = 1000;
+    for (int value : {100, 110, 125, 150, 200})
+        zoomMenu.addItem(z++, juce::String(value) + "%", true, zoom == value);
+    analyzer.addSectionHeader("Spectrum analyzer");
+    analyzer.addItem(2001, "Pre spectrum", true, showPre);
+    analyzer.addSeparator();
+    analyzer.addSectionHeader("Speed");
+    analyzer.addItem(2010, "Fast", true, speed == 0);
+    analyzer.addItem(2011, "Medium", true, speed == 1);
+    analyzer.addItem(2012, "Slow", true, speed == 2);
+    analyzer.addSectionHeader("Resolution");
+    analyzer.addItem(2020, "Low", true, detail == 0);
+    analyzer.addItem(2021, "Medium", true, detail == 1);
+    analyzer.addItem(2022, "High", true, detail == 2);
+    analyzer.addItem(2023, "Maximum", true, detail == 3);
+    analyzer.addSectionHeader("Range");
+    analyzer.addItem(2030, "60 dB", true, range == 60);
+    analyzer.addItem(2031, "90 dB", true, range == 90);
+    analyzer.addItem(2032, "120 dB", true, range == 120);
+    analyzer.addSectionHeader("Tilt");
+    analyzer.addItem(2040, "0 dB/oct", true, tilt == 0);
+    analyzer.addItem(2041, "3 dB/oct", true, tilt == 3);
+    analyzer.addItem(2042, "4.5 dB/oct", true, tilt == 4.5f);
+    menu.addSubMenu("Scale", zoomMenu);
+    menu.addSubMenu("Spectrum", analyzer);
+    auto safe = juce::Component::SafePointer<DeessPocketEditor>(this);
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(menuButton),
+                       [safe](int choice) {
+        if (safe == nullptr) return;
+        if (choice >= 1000 && choice <= 1004) {
+            const int values[] = {100, 110, 125, 150, 200};
+            safe->zoom = values[choice - 1000];
+            safe->setSize(baseWidth * safe->zoom / 100, baseHeight * safe->zoom / 100);
+        } else if (choice == 2001) safe->showPre = !safe->showPre;
+        else if (choice >= 2010 && choice <= 2012) safe->speed = choice - 2010;
+        else if (choice >= 2020 && choice <= 2023) {
+            safe->detail = choice - 2020;
+            safe->analyzer.configure(safe->processor.getSampleRate(), safe->detail);
+        }
+        else if (choice >= 2030 && choice <= 2032) safe->range = 60 + (choice - 2030) * 30;
+        else if (choice >= 2040 && choice <= 2042) safe->tilt = choice == 2040 ? 0.f : choice == 2041 ? 3.f : 4.5f;
+        safe->repaint();
+    });
+}
