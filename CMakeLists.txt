@@ -52,7 +52,8 @@ if(DEESS_BUILD_PLUGIN)
     target_compile_definitions(DeessPocket PUBLIC JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
     juce_generate_juce_header(DeessPocket)
     if(APPLE)
-        add_executable(deess_ui_capture Tools/CaptureUI.cpp
+        juce_add_console_app(deess_ui_capture PRODUCT_NAME "Deess UI Capture")
+        target_sources(deess_ui_capture PRIVATE Tools/CaptureUI.cpp
             Source/Plugin/PluginProcessor.cpp Source/Plugin/PluginEditor.cpp)
         target_link_libraries(deess_ui_capture PRIVATE deess_core DeessArtwork
             juce::juce_audio_utils juce::juce_dsp)
