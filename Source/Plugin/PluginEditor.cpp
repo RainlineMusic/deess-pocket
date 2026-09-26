@@ -12,9 +12,9 @@ float responseY(float db) { return 162.0f - db * (db > 0.0f ? 4.7f : 9.0f); }
 
 juce::Font DeessPocketEditor::font(float size) const {
 #if JUCE_MAC
-    return juce::Font("SF Pro Display", size, juce::Font::plain);
+    return juce::Font("SF Pro Display", "Light", size);
 #elif JUCE_WINDOWS
-    return juce::Font("Segoe UI", size, juce::Font::plain);
+    return juce::Font("Segoe UI", "Light", size);
 #else
     return juce::Font(juce::Font::getDefaultSansSerifFontName(), size, juce::Font::plain);
 #endif
@@ -25,11 +25,6 @@ void DeessPocketEditor::DialStyle::drawRotarySlider(juce::Graphics& g, int x, in
     const auto centre = juce::Point<float>(x + w * .5f, y + h * .5f);
     const float radius = std::min(w, h) * .405f;
     const auto colour = slider.getName() == "THRESHOLD" ? pale : magenta;
-    g.setGradientFill(juce::ColourGradient(colour.withAlpha(.15f), centre.x, centre.y,
-                                           colour.withAlpha(0.0f), centre.x + radius * 1.8f,
-                                           centre.y, true));
-    g.fillEllipse(centre.x - radius * 1.8f, centre.y - radius * 1.8f,
-                  radius * 3.6f, radius * 3.6f);
     juce::Path ring, active;
     ring.addCentredArc(centre.x, centre.y, radius, radius, 0, start, end, true);
     active.addCentredArc(centre.x, centre.y, radius, radius, 0, start,
@@ -285,6 +280,13 @@ void DeessPocketEditor::paint(juce::Graphics& g) {
 
     const char* names[] = {"THRESHOLD", "RATIO", "LOW", "SIBILANCE GAIN"};
     const int cx[] = {475, 666, 855, 1048};
+    for (int i = 0; i < 4; ++i) {
+        const auto colour = i == 0 ? pale : magenta;
+        g.setGradientFill(juce::ColourGradient(colour.withAlpha(.13f), float(cx[i]), 767.0f,
+                                               colour.withAlpha(0.0f), float(cx[i] + 115),
+                                               767.0f, true));
+        g.fillEllipse(float(cx[i] - 115), 652.0f, 230.0f, 230.0f);
+    }
     g.setColour(pale);
     for (int i = 0; i < 4; ++i) {
         g.setFont(font(17));

@@ -17,6 +17,8 @@ The live analyzer uses a brighter pearl contour with multiple faint glow
 strokes and a graduated fill. Dial arcs use three soft strokes beneath the
 sharp stroke. A single magenta trace shows live combined spectral gain; a
 separate thin horizontal line beginning at 3 kHz indicates the absolute Repair threshold.
+The dial halo is drawn by the parent editor so the child's hit-area rectangle
+cannot clip it. macOS and Windows request the platform Light font style.
 
 Both header hit targets use a transparent JUCE look and feel, eliminating
 default button borders. Bypass freezes a precomputed blurred lower-region
@@ -26,6 +28,7 @@ message thread at one-third resolution.
 
 The pixel artwork is not the whole UI: the graph, labels and controls are
 drawn natively. `Design/ui-preview.png` is a deterministic illustration
-of the updated coordinates and an example live spectrum, not a captured JUCE
-editor. A faithful comparison of actual JUCE font rendering, blur and scaled
-sizes still requires screenshots of the compiled macOS and Windows plug-in.
+of the updated coordinates. CI also builds `deess_ui_capture` and uploads a
+PNG drawn by the real JUCE editor on macOS. The capture feeds synthetic vocal
+and noise into the processor, refreshes the analyzer, and saves a component
+snapshot. A Windows DAW window screenshot remains a separate visual check.

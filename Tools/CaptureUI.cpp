@@ -1,5 +1,6 @@
 #include <JuceHeader.h>
 #include "../Source/Plugin/PluginProcessor.h"
+#include "../Source/Plugin/PluginEditor.h"
 #include <cmath>
 #include <memory>
 #include <random>
@@ -25,10 +26,7 @@ int main(int argc, char** argv) {
         }
         processor.processBlock(block, midi);
     }
-    juce::Timer::callAfterDelay(250, [] {
-        juce::MessageManager::getInstance()->stopDispatchLoop();
-    });
-    juce::MessageManager::getInstance()->runDispatchLoop();
+    static_cast<DeessPocketEditor*>(editor.get())->refreshForSnapshot();
     const auto snapshot = editor->createComponentSnapshot(editor->getLocalBounds(), true);
     const juce::File target(argv[1]);
     auto stream = target.createOutputStream();

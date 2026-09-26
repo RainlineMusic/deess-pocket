@@ -11,6 +11,7 @@ public:
     void paint(juce::Graphics&) override;
     void paintOverChildren(juce::Graphics&) override;
     void resized() override;
+    void refreshForSnapshot() { timerCallback(); }
 
 private:
     struct DialStyle final : juce::LookAndFeel_V4 {
