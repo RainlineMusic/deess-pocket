@@ -8,6 +8,16 @@ constexpr float pi = 3.14159265358979323846f;
 constexpr int baseWidth = 1536, baseHeight = 922, headerHeight = 104;
 const juce::Colour pale(0xffe6f1f6), magenta(0xffff18ed);
 float responseY(float db) { return 162.0f - db * (db > 0.0f ? 4.7f : 9.0f); }
+float visualGain(const std::array<float, deess::displayBands>& gain, int index) {
+    float sum = 0.0f, weight = 0.0f;
+    for (int offset = -5; offset <= 5; ++offset) {
+        const int bin = juce::jlimit(0, deess::displayBands - 1, index + offset);
+        const float w = float(6 - std::abs(offset));
+        sum += gain[bin] * w;
+        weight += w;
+    }
+    return sum / weight;
+}
 }
 
 juce::Font DeessPocketEditor::font(float size) const {
@@ -138,19 +148,21 @@ void DeessPocketEditor::updateResponseGlow() {
     pg.addTransform(juce::AffineTransform::scale(.25f));
     juce::Path curve;
     int first = 0, last = deess::displayBands - 1;
-    while (first < deess::displayBands && std::abs(display.gainDb[first]) <= .3f) ++first;
-    while (last >= first && std::abs(display.gainDb[last]) <= .3f) --last;
-    for (int i = first; i <= last; ++i) {
-        const float f = 20.0f * std::pow(1000.0f, i / float(deess::displayBands - 1));
-        const float x = 36.0f + std::log(f / 20.0f) / std::log(1000.0f) * (1480.0f - 36.0f);
-        const float y = responseY(display.gainDb[i]);
-        if (i == first) curve.startNewSubPath(x, y);
-        else curve.lineTo(x, y);
-    }
+    while (first < deess::displayBands && std::abs(visualGain(display.gainDb, first)) <= .3f) ++first;
+    while (last >= first && std::abs(visualGain(display.gainDb, last)) <= .3f) --last;
     const bool active = last >= first && std::any_of(
         display.gainDb.begin() + first, display.gainDb.begin() + last + 1,
         [](float db) { return std::abs(db) > .5f; });
     if (active) {
+    first = std::max(0, first - 7);
+    last = std::min(deess::displayBands - 1, last + 7);
+    for (int i = first; i <= last; ++i) {
+        const float f = 20.0f * std::pow(1000.0f, i / float(deess::displayBands - 1));
+        const float x = 36.0f + std::log(f / 20.0f) / std::log(1000.0f) * (1480.0f - 36.0f);
+        const float y = responseY(visualGain(display.gainDb, i));
+        if (i == first) curve.startNewSubPath(x, y);
+        else curve.lineTo(x, y);
+    }
         pg.setColour(magenta.withAlpha(.9f));
         pg.strokePath(curve, juce::PathStrokeType(7.0f));
     }
@@ -292,19 +304,21 @@ void DeessPocketEditor::paint(juce::Graphics& g) {
 
     // Draw the response only where the audio gain differs from zero.
     int first = 0, last = deess::displayBands - 1;
-    while (first < deess::displayBands && std::abs(display.gainDb[first]) <= .3f) ++first;
-    while (last >= first && std::abs(display.gainDb[last]) <= .3f) --last;
+    while (first < deess::displayBands && std::abs(visualGain(display.gainDb, first)) <= .3f) ++first;
+    while (last >= first && std::abs(visualGain(display.gainDb, last)) <= .3f) --last;
     const bool active = last >= first && std::any_of(
         display.gainDb.begin() + first, display.gainDb.begin() + last + 1,
         [](float db) { return std::abs(db) > .5f; });
     if (active) {
+    first = std::max(0, first - 7);
+    last = std::min(deess::displayBands - 1, last + 7);
     // One live signed response: Repair plus dynamic Low and Sibilance Gain.
     juce::Path response, responseFill;
     float firstX = 0.0f, lastX = 0.0f;
     for (int i = first; i <= last; ++i) {
         const float f = 20.0f * std::pow(1000.0f, i / float(deess::displayBands - 1));
         const float x = freqX(f);
-        const float y = responseY(display.gainDb[i]);
+        const float y = responseY(visualGain(display.gainDb, i));
         if (i == first) { response.startNewSubPath(x, y); firstX = x; }
         else response.lineTo(x, y);
         lastX = x;
