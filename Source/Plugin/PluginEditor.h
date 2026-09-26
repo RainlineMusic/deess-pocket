@@ -17,6 +17,11 @@ private:
         void drawRotarySlider(juce::Graphics&, int, int, int, int, float, float, float,
                               juce::Slider&) override;
     } style;
+    struct ChromeStyle final : juce::LookAndFeel_V4 {
+        void drawButtonBackground(juce::Graphics&, juce::Button&, const juce::Colour&,
+                                  bool, bool) override {}
+        void drawButtonText(juce::Graphics&, juce::TextButton&, bool, bool) override {}
+    } chromeStyle;
     void timerCallback() override;
     void showMenu();
     void updateBypassSnapshot();
@@ -33,6 +38,7 @@ private:
     juce::Image bypassSnapshot;
     bool previousBypass = false;
     bool capturingSnapshot = false;
+    int snapshotCounter = 44;
     int zoom = 100, speed = 0, detail = 2, range = 90;
     float tilt = 3.0f;
     bool showPre = true;

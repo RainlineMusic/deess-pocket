@@ -6,9 +6,9 @@ DeessPocketProcessor::DeessPocketProcessor()
                                       .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       params(*this, nullptr, "PARAMETERS", layout()) {
     threshold = params.getRawParameterValue("threshold");
-    wide = params.getRawParameterValue("wide");
-    split = params.getRawParameterValue("split");
-    repair = params.getRawParameterValue("repair");
+    ratio = params.getRawParameterValue("ratio");
+    low = params.getRawParameterValue("low");
+    sibilanceGain = params.getRawParameterValue("sibilanceGain");
     bypass = params.getRawParameterValue("bypass");
     setLatencySamples(deess::fftSize - 1);
 }
@@ -16,11 +16,13 @@ DeessPocketProcessor::DeessPocketProcessor()
 juce::AudioProcessorValueTreeState::ParameterLayout DeessPocketProcessor::layout() {
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> p;
     p.push_back(std::make_unique<juce::AudioParameterFloat>(
-        "threshold", "Threshold", juce::NormalisableRange<float>(-72.f, 0.f, 0.1f), -24.f));
-    for (auto name : {"wide", "split", "repair"})
-        p.push_back(std::make_unique<juce::AudioParameterFloat>(
-            name, juce::String(name).toUpperCase(), juce::NormalisableRange<float>(0.f, 100.f, 1.f),
-            juce::String(name) == "wide" ? 55.f : juce::String(name) == "split" ? 70.f : 40.f));
+        "threshold", "Threshold", juce::NormalisableRange<float>(-90.f, 0.f, 0.1f), -52.2f));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "ratio", "Ratio", juce::NormalisableRange<float>(1.f, 21.f, 0.1f), 4.f));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "low", "Low", juce::NormalisableRange<float>(-12.f, 0.f, 0.1f), 0.f));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "sibilanceGain", "Sibilance Gain", juce::NormalisableRange<float>(-12.f, 12.f, 0.1f), 0.f));
     p.push_back(std::make_unique<juce::AudioParameterBool>("bypass", "Bypass", false));
     return {p.begin(), p.end()};
 }
@@ -38,8 +40,7 @@ bool DeessPocketProcessor::isBusesLayoutSupported(const BusesLayout& l) const {
 
 void DeessPocketProcessor::process(juce::AudioBuffer<float>& b, bool hostBypass) noexcept {
     juce::ScopedNoDenormals noDenormals;
-    engine.setControls({threshold->load(), wide->load() * 0.01f,
-                        split->load() * 0.01f, repair->load() * 0.01f,
+    engine.setControls({threshold->load(), ratio->load(), low->load(), sibilanceGain->load(),
                         hostBypass || bypass->load() > 0.5f});
     hostBypassDisplay.store(hostBypass, std::memory_order_relaxed);
     if (b.getNumChannels() == 0) return;
@@ -59,12 +60,10 @@ void DeessPocketProcessor::process(juce::AudioBuffer<float>& b, bool hostBypass)
         if (r) r[i] = oright;
     }
     const auto m = engine.meters();
-    wideDisplay.store(m.wideDb, std::memory_order_relaxed);
-    splitDisplay.store(m.splitDb, std::memory_order_relaxed);
     confidenceDisplay.store(m.confidence, std::memory_order_relaxed);
     detectorDisplay.store(m.detectorDb, std::memory_order_relaxed);
     for (int i = 0; i < deess::displayBands; ++i) {
-        repairDisplay[i].store(m.repairDb[i], std::memory_order_relaxed);
+        gainDisplay[i].store(m.gainDb[i], std::memory_order_relaxed);
     }
 }
 void DeessPocketProcessor::processBlock(juce::AudioBuffer<float>& b, juce::MidiBuffer&) { process(b, false); }
@@ -72,12 +71,10 @@ void DeessPocketProcessor::processBlockBypassed(juce::AudioBuffer<float>& b, juc
 
 deess::Meters DeessPocketProcessor::display() const noexcept {
     deess::Meters m;
-    m.wideDb = wideDisplay.load(std::memory_order_relaxed);
-    m.splitDb = splitDisplay.load(std::memory_order_relaxed);
     m.confidence = confidenceDisplay.load(std::memory_order_relaxed);
     m.detectorDb = detectorDisplay.load(std::memory_order_relaxed);
     for (int i = 0; i < deess::displayBands; ++i) {
-        m.repairDb[i] = repairDisplay[i].load(std::memory_order_relaxed);
+        m.gainDb[i] = gainDisplay[i].load(std::memory_order_relaxed);
     }
     return m;
 }

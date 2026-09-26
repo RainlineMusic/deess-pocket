@@ -6,8 +6,8 @@
 namespace {
 constexpr float pi = 3.14159265358979323846f;
 constexpr int baseWidth = 1536, baseHeight = 922, headerHeight = 104;
-const juce::Colour pale(0xffdbe6ec), cyan(0xff00d8f8), yellow(0xffffce00), magenta(0xfff100e9);
-float responseY(float db, float scale) { return (162.0f - db * 9.0f) * scale; }
+const juce::Colour pale(0xffe6f1f6), magenta(0xffff18ed);
+float responseY(float db) { return 162.0f - db * (db > 0.0f ? 4.7f : 9.0f); }
 }
 
 juce::Font DeessPocketEditor::font(float size) const {
@@ -24,8 +24,7 @@ void DeessPocketEditor::DialStyle::drawRotarySlider(juce::Graphics& g, int x, in
     int w, int h, float proportion, float start, float end, juce::Slider& slider) {
     const auto centre = juce::Point<float>(x + w * .5f, y + h * .5f);
     const float radius = std::min(w, h) * .405f;
-    const auto colour = slider.getName() == "THRESHOLD" ? pale
-        : slider.getName() == "WIDE" ? cyan : slider.getName() == "SPLIT" ? yellow : magenta;
+    const auto colour = slider.getName() == "THRESHOLD" ? pale : magenta;
     juce::Path ring, active;
     ring.addCentredArc(centre.x, centre.y, radius, radius, 0, start, end, true);
     active.addCentredArc(centre.x, centre.y, radius, radius, 0, start,
@@ -37,8 +36,12 @@ void DeessPocketEditor::DialStyle::drawRotarySlider(juce::Graphics& g, int x, in
                 juce::RectanglePlacement::stretchToFit);
     g.setColour(juce::Colour(0xff50606a).withAlpha(.55f));
     g.strokePath(ring, juce::PathStrokeType(2.5f));
-    g.setColour(colour.withAlpha(.16f));
-    g.strokePath(active, juce::PathStrokeType(9.0f));
+    g.setColour(colour.withAlpha(.025f));
+    g.strokePath(active, juce::PathStrokeType(23.0f));
+    g.setColour(colour.withAlpha(.07f));
+    g.strokePath(active, juce::PathStrokeType(13.0f));
+    g.setColour(colour.withAlpha(.20f));
+    g.strokePath(active, juce::PathStrokeType(7.0f));
     g.setColour(colour);
     g.strokePath(active, juce::PathStrokeType(3.6f));
     const float angle = start + proportion * (end - start);
@@ -51,8 +54,8 @@ void DeessPocketEditor::DialStyle::drawRotarySlider(juce::Graphics& g, int x, in
 
 DeessPocketEditor::DeessPocketEditor(DeessPocketProcessor& p)
     : AudioProcessorEditor(p), processor(p) {
-    const char* ids[] = {"threshold", "wide", "split", "repair"};
-    const char* titles[] = {"THRESHOLD", "WIDE", "SPLIT", "REPAIR"};
+    const char* ids[] = {"threshold", "ratio", "low", "sibilanceGain"};
+    const char* titles[] = {"THRESHOLD", "RATIO", "LOW", "SIBILANCE GAIN"};
     for (int i = 0; i < 4; ++i) {
         dials[i].setName(titles[i]);
         dials[i].setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
@@ -65,14 +68,11 @@ DeessPocketEditor::DeessPocketEditor(DeessPocketProcessor& p)
     }
     menuButton.setButtonText({});
     powerButton.setButtonText({});
-    menuButton.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
-    powerButton.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
-    menuButton.setColour(juce::TextButton::buttonOnColourId, juce::Colours::transparentBlack);
-    powerButton.setColour(juce::TextButton::buttonOnColourId, juce::Colours::transparentBlack);
+    menuButton.setLookAndFeel(&chromeStyle);
+    powerButton.setLookAndFeel(&chromeStyle);
     menuButton.onClick = [this] { showMenu(); };
     powerButton.setClickingTogglesState(true);
     powerButton.onClick = [this] {
-        if (powerButton.getToggleState()) updateBypassSnapshot();
         previousBypass = powerButton.getToggleState();
         repaint();
     };
@@ -94,6 +94,8 @@ DeessPocketEditor::~DeessPocketEditor() {
     bypassAttachment.reset();
     attachments = {};
     for (auto& d : dials) d.setLookAndFeel(nullptr);
+    menuButton.setLookAndFeel(nullptr);
+    powerButton.setLookAndFeel(nullptr);
 }
 
 void DeessPocketEditor::resized() {
@@ -123,7 +125,10 @@ void DeessPocketEditor::timerCallback() {
                             : current + release * (visualSpectrum[i] - current);
     }
     const bool bypassNow = powerButton.getToggleState() || processor.hostBypassed();
-    if (bypassNow && !previousBypass) updateBypassSnapshot();
+    if (!bypassNow && ++snapshotCounter >= 45) {
+        snapshotCounter = 0;
+        updateBypassSnapshot();
+    }
     previousBypass = bypassNow;
     repaint();
 }
@@ -133,10 +138,16 @@ void DeessPocketEditor::updateBypassSnapshot() {
     capturingSnapshot = true;
     const auto source = createComponentSnapshot({0, top, getWidth(), getHeight() - top}, true);
     capturingSnapshot = false;
-    bypassSnapshot = juce::Image(juce::Image::ARGB, source.getWidth(), source.getHeight(), true);
-    juce::ImageConvolutionKernel blur(17);
-    blur.createGaussianBlur(6.5f);
-    blur.applyToImage(bypassSnapshot, source, source.getBounds());
+    const int w = std::max(1, source.getWidth() / 3);
+    const int h = std::max(1, source.getHeight() / 3);
+    juce::Image small(juce::Image::ARGB, w, h, true);
+    juce::Graphics sg(small);
+    sg.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
+    sg.drawImage(source, small.getBounds().toFloat(), juce::RectanglePlacement::stretchToFit);
+    bypassSnapshot = juce::Image(juce::Image::ARGB, w, h, true);
+    juce::ImageConvolutionKernel blur(11);
+    blur.createGaussianBlur(3.4f);
+    blur.applyToImage(bypassSnapshot, small, small.getBounds());
 }
 
 void DeessPocketEditor::paint(juce::Graphics& g) {
@@ -147,7 +158,7 @@ void DeessPocketEditor::paint(juce::Graphics& g) {
     g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
     g.drawImage(background, juce::Rectangle<float>(0, 0, baseWidth, baseHeight),
                 juce::RectanglePlacement::stretchToFit);
-    g.setColour(juce::Colour(0xff071c2b));
+    g.setColour(juce::Colour(0xff163145));
     g.drawLine(0, 103, 1536, 103, 1);
 
     // Header: lettering and spacing are fixed in reference coordinates.
@@ -159,7 +170,7 @@ void DeessPocketEditor::paint(juce::Graphics& g) {
     g.setColour(juce::Colour(0xff395160));
     g.drawLine(636, 65, 673, 65, .8f); g.drawLine(863, 65, 900, 65, .8f);
     for (int i = 0; i < 3; ++i) g.drawLine(37, 33 + i * 8, 64, 33 + i * 8, 1.2f);
-    g.setColour(juce::Colour(0xff546b79));
+    g.setColour(powerButton.getToggleState() ? juce::Colour(0xffd9eaf1) : juce::Colour(0xff607a8a));
     g.drawEllipse(1465, 26, 41, 41, 1.0f);
     juce::Path power;
     power.addCentredArc(1485.5f, 46.5f, 9, 9, 0, -.84f * pi, .84f * pi, true);
@@ -171,7 +182,7 @@ void DeessPocketEditor::paint(juce::Graphics& g) {
     const auto freqX = [&](float f) { return left + std::log(f / 20.0f) / std::log(1000.0f) * (right - left); };
     for (float f : {20.f, 50.f, 100.f, 200.f, 500.f, 1000.f, 2000.f, 5000.f, 10000.f, 20000.f}) {
         const float x = freqX(f);
-        g.setColour(juce::Colour(0xff18313f).withAlpha(.75f));
+        g.setColour(juce::Colour(0xff244358).withAlpha(.52f));
         g.drawLine(x, 104, x, 862, .8f);
         g.setColour(juce::Colour(0xffccd3d7));
         g.setFont(font(15));
@@ -179,12 +190,19 @@ void DeessPocketEditor::paint(juce::Graphics& g) {
         g.drawText(name, int(x - 25), 867, 50, 33, juce::Justification::centred);
     }
     for (int db = 0; db >= -60; db -= 6) {
-        const float y = responseY(float(db), 1);
+        const float y = responseY(float(db));
         g.setColour(juce::Colour(0xff24404e).withAlpha(db == 0 ? .82f : .38f));
         g.drawLine(15, y, 1482, y, db == 0 ? 1.f : .65f);
         g.setColour(juce::Colour(0xffabb8c2));
         g.setFont(font(14));
         g.drawText(juce::String(db) + (db == 0 ? " dB" : ""), 1487, int(y - 11), 47, 22,
+                   juce::Justification::left);
+    }
+    for (int db : {6, 12}) {
+        const float y = responseY(float(db));
+        g.setColour(juce::Colour(0xff9aaebc).withAlpha(.55f));
+        g.setFont(font(13));
+        g.drawText("+" + juce::String(db), 1487, int(y - 11), 47, 22,
                    juce::Justification::left);
     }
 
@@ -199,43 +217,67 @@ void DeessPocketEditor::paint(juce::Graphics& g) {
         }
         auto outline = fill;
         fill.lineTo(right, 862); fill.lineTo(left, 862); fill.closeSubPath();
-        g.setGradientFill(juce::ColourGradient(juce::Colour(0xffd5e0e6).withAlpha(.46f), 0, 300,
-                                               juce::Colour(0xff718894).withAlpha(.05f), 0, 862, false));
+        juce::ColourGradient spectral(juce::Colour(0xfff4fbff).withAlpha(.80f), 0, 180,
+                                      juce::Colour(0xff071a27).withAlpha(.12f), 0, 862, false);
+        spectral.addColour(.32, juce::Colour(0xffb5c5d0).withAlpha(.59f));
+        spectral.addColour(.70, juce::Colour(0xff4f6879).withAlpha(.28f));
+        g.setGradientFill(spectral);
         g.fillPath(fill);
-        g.setColour(juce::Colour(0xffc3d0d7).withAlpha(.62f));
-        g.strokePath(outline, juce::PathStrokeType(1.0f));
+        g.setColour(juce::Colour(0xffdceaf3).withAlpha(.08f));
+        g.strokePath(outline, juce::PathStrokeType(7.0f));
+        g.setColour(juce::Colour(0xffedf6fc).withAlpha(.18f));
+        g.strokePath(outline, juce::PathStrokeType(3.0f));
+        g.setColour(juce::Colour(0xfff4fbff).withAlpha(.88f));
+        g.strokePath(outline, juce::PathStrokeType(1.1f));
     }
 
-    // Three truthful reduction layers: white/cyan full band, yellow high shelf,
-    // magenta total including time-varying repair. Unlike a static mockup,
-    // all traces flatten at zero reduction when nothing is being processed.
-    const float wideDb = display.wideDb;
-    const float splitDb = display.splitDb;
-    for (int layer = 0; layer < 3; ++layer) {
-        juce::Path p;
-        for (int i = 0; i < deess::displayBands; ++i) {
-            const float f = 20.0f * std::pow(1000.0f, i / float(deess::displayBands - 1));
-            const float shelf = juce::jlimit(0.0f, 1.0f,
-                (std::log2(f) - std::log2(3000.0f)) / (std::log2(16000.0f / 3.0f) - std::log2(3000.0f)));
-            const float d = layer == 0 ? wideDb : layer == 1 ? wideDb + splitDb * shelf
-                                                       : wideDb + splitDb * shelf + display.repairDb[i];
-            if (i == 0) p.startNewSubPath(freqX(f), responseY(-d, 1));
-            else p.lineTo(freqX(f), responseY(-d, 1));
-        }
-        g.setColour(layer == 0 ? cyan : layer == 1 ? yellow : magenta);
-        g.strokePath(p, juce::PathStrokeType(layer == 2 ? 1.8f : 1.3f));
-    }
+    // Repair is an absolute horizontal bin threshold on the input spectrum.
+    const float threshold = float(dials[0].getValue());
+    const float thresholdY = juce::jlimit(145.0f, 862.0f,
+        812.0f - (threshold + range) * (650.0f / range));
+    g.setColour(magenta.withAlpha(.08f));
+    g.drawLine(left, thresholdY, right, thresholdY, 7.0f);
+    g.setColour(magenta.withAlpha(.22f));
+    g.drawLine(left, thresholdY, right, thresholdY, 2.0f);
+    g.setColour(magenta.withAlpha(.60f));
+    g.drawLine(left, thresholdY, right, thresholdY, .8f);
 
-    const char* names[] = {"THRESHOLD", "WIDE", "SPLIT", "REPAIR"};
+    // One live signed response: Repair plus dynamic Low and Sibilance Gain.
+    juce::Path response, responseFill;
+    for (int i = 0; i < deess::displayBands; ++i) {
+        const float f = 20.0f * std::pow(1000.0f, i / float(deess::displayBands - 1));
+        const float y = responseY(display.gainDb[i]);
+        if (i == 0) response.startNewSubPath(freqX(f), y);
+        else response.lineTo(freqX(f), y);
+    }
+    responseFill = response;
+    responseFill.lineTo(right, responseY(0));
+    responseFill.lineTo(left, responseY(0));
+    responseFill.closeSubPath();
+    g.setGradientFill(juce::ColourGradient(magenta.withAlpha(.20f), 0, 180,
+                                           magenta.withAlpha(.005f), 0, 850, false));
+    g.fillPath(responseFill);
+    g.setColour(magenta.withAlpha(.045f));
+    g.strokePath(response, juce::PathStrokeType(16.0f));
+    g.setColour(magenta.withAlpha(.12f));
+    g.strokePath(response, juce::PathStrokeType(7.0f));
+    g.setColour(magenta.withAlpha(.30f));
+    g.strokePath(response, juce::PathStrokeType(3.8f));
+    g.setColour(magenta);
+    g.strokePath(response, juce::PathStrokeType(1.8f));
+
+    const char* names[] = {"THRESHOLD", "RATIO", "LOW", "SIBILANCE GAIN"};
     const int cx[] = {475, 666, 855, 1048};
     g.setColour(pale);
     for (int i = 0; i < 4; ++i) {
         g.setFont(font(17));
         g.drawText(names[i], cx[i] - 90, 674, 180, 31, juce::Justification::centred);
         g.setFont(font(21));
-        const juce::String value = i == 0 && dials[i].getValue() <= -71.95 ? juce::String::fromUTF8("−∞ dB")
-            : i == 0 ? juce::String(dials[i].getValue(), 1) + " dB"
-            : juce::String(int(dials[i].getValue())) + "%";
+        const auto v = dials[i].getValue();
+        const juce::String value = i == 0 ? juce::String(v, 1) + " dB"
+            : i == 1 ? (v >= 20.5 ? juce::String::fromUTF8("∞:1")
+                                : juce::String(v, 1) + ":1")
+            : (v > 0 ? "+" : "") + juce::String(v, 1) + " dB";
         g.drawText(value, cx[i] - 90, 826, 180, 35, juce::Justification::centred);
     }
 }

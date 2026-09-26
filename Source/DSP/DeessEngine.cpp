@@ -23,18 +23,12 @@ void Engine::prepare(double sampleRate, int channelCount) {
     const float binHz = static_cast<float>(rate / fftSize);
     for (int k = 0; k <= fftSize / 2; ++k) {
         const float hz = k * binHz;
-        tiltDb[k] = 3.0f * std::log2(std::max(20.0f, hz) / 1000.0f);
-        // Geometric centre 4kHz: symmetric transition in log frequency.
-        shelfWeight[k] = smooth(std::log2(3000.0f), std::log2(16000.0f / 3.0f),
-                                std::log2(std::max(20.0f, hz)));
-        envelopeLo[k] = std::max(0, static_cast<int>(hz / std::pow(2.0f, 0.70f) / binHz));
-        envelopeHi[k] = std::min(static_cast<int>(std::min(16000.0, rate * 0.48) / binHz),
-                                static_cast<int>(std::ceil(hz * std::pow(2.0f, 0.70f) / binHz)));
+        lowShelfWeight[k] = 1.0f - smooth(std::log2(300.0f), std::log2(1200.0f),
+                                          std::log2(std::max(20.0f, hz)));
     }
     bypassCoefficient = std::exp(-1.0f / static_cast<float>(rate * 0.002));
     repairAttack = std::exp(-float(hopSize / rate) / 0.001f);
     repairRelease = std::exp(-float(hopSize / rate) / 0.030f);
-    binLevelCorrection = 10.0f * std::log10(binHz / (48000.0f / 2048.0f));
     reset();
 }
 
@@ -42,7 +36,7 @@ void Engine::reset() noexcept {
     clock = 0;
     confidenceSmoothed = 0.0f;
     noiseDb = -85.0f;
-    wideReduction = splitReduction = 0.0f;
+    eventEnvelope = 0.0f;
     bypassMix = controls.bypass ? 1.0f : 0.0f;
     eventActive = false;
     meter = {};
@@ -55,11 +49,12 @@ void Engine::reset() noexcept {
 }
 
 void Engine::setControls(Controls c) noexcept {
-    controls.thresholdDb = std::clamp(std::isfinite(c.thresholdDb) ? c.thresholdDb : -24.0f,
-                                      -72.0f, 0.0f);
-    controls.wide = clamp01(std::isfinite(c.wide) ? c.wide : 0.0f);
-    controls.split = clamp01(std::isfinite(c.split) ? c.split : 0.0f);
-    controls.repair = clamp01(std::isfinite(c.repair) ? c.repair : 0.0f);
+    controls.thresholdDb = std::clamp(std::isfinite(c.thresholdDb) ? c.thresholdDb : -52.2f,
+                                      -90.0f, 0.0f);
+    controls.ratio = std::clamp(std::isfinite(c.ratio) ? c.ratio : 4.0f, 1.0f, 21.0f);
+    controls.lowDb = std::clamp(std::isfinite(c.lowDb) ? c.lowDb : 0.0f, -12.0f, 0.0f);
+    controls.sibilanceGainDb = std::clamp(std::isfinite(c.sibilanceGainDb) ? c.sibilanceGainDb : 0.0f,
+                                          -12.0f, 12.0f);
     controls.bypass = c.bypass;
 }
 
@@ -140,51 +135,26 @@ void Engine::processFrame(std::int64_t start) noexcept {
     // Update a quiet reference only outside likely fricative events.
     if (!eventActive) noiseDb = std::min(hfDb, noiseDb + 0.002f);
 
-    const float threshold = controls.thresholdDb <= -71.9f ? -120.0f : controls.thresholdDb;
-    const float drive = eventActive ? smooth(threshold, threshold + 12.0f, hfDb) : 0.0f;
-    const float wTarget = 12.0f * controls.wide * drive;
-    const float sTarget = 12.0f * controls.split * drive;
-    const float wCoeff = std::exp(-frameSeconds / (wTarget > wideReduction ? 0.004f : 0.055f));
-    const float sCoeff = std::exp(-frameSeconds / (sTarget > splitReduction ? 0.004f : 0.055f));
-    wideReduction = wTarget + wCoeff * (wideReduction - wTarget);
-    splitReduction = sTarget + sCoeff * (splitReduction - sTarget);
+    const float eventTarget = eventActive ? 1.0f : 0.0f;
+    const float eventCoeff = eventActive ? repairAttack : repairRelease;
+    eventEnvelope = eventTarget + eventCoeff * (eventEnvelope - eventTarget);
     meter.confidence = confidenceSmoothed;
     meter.detectorDb = hfDb;
     meter.event = eventActive;
-    meter.wideDb = wideReduction;
-    meter.splitDb = splitReduction;
+    meter.eventGainDb = eventEnvelope * controls.sibilanceGainDb;
     meter.repairPeakDb = 0.0f;
 
-    // The narrow estimate suppresses random single-bin fluctuations. The broad
-    // tilted envelope detects whistle clusters, not just isolated FFT spikes.
-    for (int k = 0; k < bins; ++k)
-        smoothed[k] = (magnitudes[std::max(0, k - 1)] + 2.0f * magnitudes[k]
-                       + magnitudes[std::min(bins - 1, k + 1)]) * 0.25f;
-    prefix[0] = 0.0f;
-    for (int k = 0; k < bins; ++k) prefix[k + 1] = prefix[k] + smoothed[k] + tiltDb[k];
-
+    // One absolute threshold for every FFT bin; no adaptive spectral envelope.
     for (int k = 0; k < bins; ++k) {
-        const float hz = k * binHz;
-        // Smooth transition around 4 kHz, at most a shelf at high frequencies.
-        const float shelf = shelfWeight[k];
-        float targetRepair = 0.0f;
-        if (controls.repair > 0.0f && eventActive && hz >= 1800.0f
-            && hz <= std::min(16000.0f, static_cast<float>(rate * 0.48))) {
-            const int lo = envelopeLo[k], hi = envelopeHi[k];
-            // Relative floor keeps weak regions of the same consonant intact.
-            // It is level-invariant; the external reference's -52.2 dB is NOT
-            // treated as a calibrated dBFS value in our differently scaled FFT.
-            const float reference = std::max((prefix[hi + 1] - prefix[lo]) / (hi - lo + 1),
-                                             hfDb - 18.0f + binLevelCorrection);
-            const float localThreshold = 14.0f - 22.0f * controls.repair;
-            // Infinity:1 above the local threshold. No Range control for Repair.
-            targetRepair = std::max(0.0f, smoothed[k] + tiltDb[k] - reference - localThreshold);
-        }
+        const float slope = controls.ratio >= 20.5f ? 1.0f : 1.0f - 1.0f / controls.ratio;
+        const float targetRepair = eventActive
+            ? std::max(0.0f, magnitudes[k] - controls.thresholdDb) * slope : 0.0f;
         const float rCoeff = targetRepair > repairSmoothed[k] ? repairAttack : repairRelease;
         repairSmoothed[k] = targetRepair + rCoeff * (repairSmoothed[k] - targetRepair);
         meter.repairPeakDb = std::max(meter.repairPeakDb, repairSmoothed[k]);
-        const float reduction = wideReduction + splitReduction * shelf + repairSmoothed[k];
-        const float gain = linear(-reduction);
+        const float netDb = eventEnvelope * (controls.sibilanceGainDb
+                            + controls.lowDb * lowShelfWeight[k]) - repairSmoothed[k];
+        const float gain = linear(netDb);
         for (int ch = 0; ch < channels; ++ch) {
             spectra[ch][k] *= gain;
             if (k != 0 && k != fftSize / 2) spectra[ch][fftSize - k] *= gain;
@@ -194,9 +164,8 @@ void Engine::processFrame(std::int64_t start) noexcept {
         const float f = 20.0f * std::pow(1000.0f, i / float(displayBands - 1));
         const int k = std::clamp(static_cast<int>(std::round(f / binHz)), 0, bins - 1);
         meter.preSpectrumDb[i] = magnitudes[k];
-        meter.reductionDb[i] = wideReduction + splitReduction * shelfWeight[k]
-                               + repairSmoothed[k];
-        meter.repairDb[i] = repairSmoothed[k];
+        meter.gainDb[i] = eventEnvelope * (controls.sibilanceGainDb
+                          + controls.lowDb * lowShelfWeight[k]) - repairSmoothed[k];
     }
     for (int ch = 0; ch < channels; ++ch) {
         fft(spectra[ch], true);

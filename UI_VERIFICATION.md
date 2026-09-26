@@ -1,47 +1,31 @@
-# UI verification against the supplied 1536 × 922 reference
+# Visual comparison
 
-The JUCE layout uses the reference canvas directly and scales it uniformly for
-100%, 110%, 125%, 150% and 200%. The checked preview is
-`Design/ui-preview.png`.
+Reference image 1280 × 768; JUCE design canvas 1536 × 922. These share nearly
+the same aspect ratio. The normalized locations are maintained:
 
-| Property | Reference | Implementation |
-|---|---:|---:|
-| Canvas | 1536 × 922 | 1536 × 922 base coordinates |
-| Header lower edge | y≈103 | y=103 |
-| Menu icon | x≈37–64 | x=37–64; larger invisible hit target |
-| Power ring | centre≈1486,47; diameter≈41 | centre=1485.5,46.5; diameter=41 |
-| Dial centres | ≈475, 666, 855, 1048 | 475, 666, 855, 1048 |
-| Dial face | ≈112 px | 112 px at 100% |
-| Dial labels | y≈690 | centre y=690 |
-| Values | y≈844 | centre y=844 |
-| Frequency baseline | y≈885 | centre y=885 |
+| Element | Reference scaled to 1536 × 922 | JUCE |
+| --- | ---: | ---: |
+| Header lower edge | y≈104 | y=103 |
+| Menu strokes | x≈37–64 | x=37–64 |
+| Title center | x≈768 | x=768 |
+| Power center | x≈1486, y≈47 | x=1485.5, y=46.5 |
+| Four dial centers | x≈475, 666, 855, 1048 | same |
+| Frequency baseline | y≈885 | y≈885 |
 
-The background is generated artwork with the dark navy base and several broad
-blue/cyan glows. It is embedded as a JUCE BinaryData resource. Dial faces are
-also rendered from an embedded high-resolution asset. Active arcs use a wide
-transparent stroke below the sharp colored stroke, reproducing the glow rather
-than drawing only a solid line.
+The revised background adds layered navy and blue haze with a darker vignette.
+The live analyzer uses a brighter pearl contour with multiple faint glow
+strokes and a graduated fill. Dial arcs use three soft strokes beneath the
+sharp stroke. A single magenta trace shows live combined spectral gain; a
+separate thin horizontal line indicates the absolute Repair threshold.
 
-macOS requests SF Pro Display; Windows requests Segoe UI. The title uses extra
-tracking and the subtitle uses a smaller, wider tracking value. JUCE falls back
-to the platform sans face only when the requested family is unavailable.
+Both header hit targets use a transparent JUCE look and feel, eliminating
+default button borders. Bypass freezes a precomputed blurred lower-region
+snapshot, dims it and draws a centered BYPASS label. The click handler only
+changes state and repaints; the expensive snapshot is made periodically on the
+message thread at one-third resolution.
 
-The analyzer is a real pre-processing spectrum. Its resolution menu selects
-1024, 2048, 4096 or 8192 FFT points; Fast/Medium/Slow changes release, Range
-changes vertical scale, and Tilt rotates the displayed spectrum about 1 kHz.
-These preferences do not change audio processing.
-
-Bypass captures and Gaussian-blurs only the region below y=104. The title bar,
-menu and power icon remain sharp. The centre overlay reads `BYPASS`. Host bypass
-and the plugin's power button both activate this view; audio remains latency
-aligned.
-
-One intentional difference from the still reference: reduction curves show the
-current DSP state. Wide is drawn as full-band reduction, Split as the 4 kHz
-high shelf, and Repair as the live spectral mask. They lie at 0 dB when the
-processor is inactive instead of displaying decorative fixed cuts.
-
-The preview is a deterministic visual QA render made from the same reference
-coordinates and generated assets. The JUCE editor still needs a real macOS and
-Windows build check because this container does not contain the JUCE SDK or a
-windowing build toolchain.
+The pixel artwork is not the whole UI: the graph, labels and controls are
+drawn natively. `Design/ui-preview.png` is a deterministic illustration
+of the updated coordinates and an example live spectrum, not a captured JUCE
+editor. A faithful comparison of actual JUCE font rendering, blur and scaled
+sizes still requires screenshots of the compiled macOS and Windows plug-in.
