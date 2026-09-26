@@ -7,7 +7,9 @@ namespace {
 constexpr float pi = 3.14159265358979323846f;
 constexpr int baseWidth = 1536, baseHeight = 922, headerHeight = 104;
 const juce::Colour pale(0xffe6f1f6), magenta(0xffff18ed);
-float responseY(float db) { return 162.0f - db * (db > 0.0f ? 4.7f : 9.0f); }
+float responseY(float db, int range) {
+    return 162.0f - db * (db > 0.0f ? 4.7f : 650.0f / float(range));
+}
 float visualGain(const std::array<float, deess::displayBands>& gain, int index) {
     float sum = 0.0f, weight = 0.0f;
     for (int offset = -5; offset <= 5; ++offset) {
@@ -159,7 +161,7 @@ void DeessPocketEditor::updateResponseGlow() {
     for (int i = first; i <= last; ++i) {
         const float f = 20.0f * std::pow(1000.0f, i / float(deess::displayBands - 1));
         const float x = 36.0f + std::log(f / 20.0f) / std::log(1000.0f) * (1480.0f - 36.0f);
-        const float y = responseY(visualGain(display.gainDb, i));
+        const float y = responseY(visualGain(display.gainDb, i), range);
         if (i == first) curve.startNewSubPath(x, y);
         else curve.lineTo(x, y);
     }
@@ -251,7 +253,7 @@ void DeessPocketEditor::paint(juce::Graphics& g) {
         g.drawText(name, int(x - 25), 867, 50, 33, juce::Justification::centred);
     }
     for (int db = 0; db >= -60; db -= 6) {
-        const float y = responseY(float(db));
+        const float y = responseY(float(db), range);
         g.setColour(juce::Colour(0xff24404e).withAlpha(db == 0 ? .82f : .38f));
         g.drawLine(15, y, 1482, y, db == 0 ? 1.f : .65f);
         g.setColour(juce::Colour(0xffabb8c2));
@@ -260,7 +262,7 @@ void DeessPocketEditor::paint(juce::Graphics& g) {
                    juce::Justification::left);
     }
     for (int db : {6, 12}) {
-        const float y = responseY(float(db));
+        const float y = responseY(float(db), range);
         g.setColour(juce::Colour(0xff9aaebc).withAlpha(.55f));
         g.setFont(font(13));
         g.drawText("+" + juce::String(db), 1487, int(y - 11), 47, 22,
@@ -272,7 +274,7 @@ void DeessPocketEditor::paint(juce::Graphics& g) {
         for (int i = 0; i < SpectrumAnalyzer::points; ++i) {
             const float f = 20.0f * std::pow(1000.0f, i / float(SpectrumAnalyzer::points - 1));
             const float displayedDb = visualSpectrum[i] + tilt * std::log2(f / 1000.0f);
-            const float y = juce::jlimit(145.0f, 862.0f, 812.0f - (displayedDb + range) * (650.0f / range));
+            const float y = juce::jlimit(145.0f, 862.0f, responseY(displayedDb, range));
             if (i == 0) fill.startNewSubPath(freqX(f), y);
             else fill.lineTo(freqX(f), y);
         }
@@ -294,8 +296,7 @@ void DeessPocketEditor::paint(juce::Graphics& g) {
 
     // Repair is an absolute horizontal bin threshold on the input spectrum.
     const float threshold = float(dials[0].getValue());
-    const float thresholdY = juce::jlimit(145.0f, 862.0f,
-        812.0f - (threshold + range) * (650.0f / range));
+    const float thresholdY = juce::jlimit(145.0f, 862.0f, responseY(threshold, range));
     const float repairStart = freqX(3000.0f);
     g.setColour(pale.withAlpha(.09f));
     g.drawLine(repairStart, thresholdY, right, thresholdY, 4.0f);
@@ -318,14 +319,14 @@ void DeessPocketEditor::paint(juce::Graphics& g) {
     for (int i = first; i <= last; ++i) {
         const float f = 20.0f * std::pow(1000.0f, i / float(deess::displayBands - 1));
         const float x = freqX(f);
-        const float y = responseY(visualGain(display.gainDb, i));
+        const float y = responseY(visualGain(display.gainDb, i), range);
         if (i == first) { response.startNewSubPath(x, y); firstX = x; }
         else response.lineTo(x, y);
         lastX = x;
     }
     responseFill = response;
-    responseFill.lineTo(lastX, responseY(0));
-    responseFill.lineTo(firstX, responseY(0));
+    responseFill.lineTo(lastX, responseY(0, range));
+    responseFill.lineTo(firstX, responseY(0, range));
     responseFill.closeSubPath();
     g.setGradientFill(juce::ColourGradient(magenta.withAlpha(.20f), 0, 180,
                                            magenta.withAlpha(.005f), 0, 850, false));
