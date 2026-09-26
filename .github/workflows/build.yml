@@ -42,7 +42,7 @@ jobs:
       - name: Capture native JUCE interface
         run: |
           cmake --build build --config Release --target deess_ui_capture
-          build/Release/deess_ui_capture "$PWD/deess-ui-macos.png"
+          build/deess_ui_capture_artefacts/Release/deess_ui_capture "$PWD/deess-ui-macos.png"
           echo UI_PNG_BEGIN
           base64 < deess-ui-macos.png
           echo UI_PNG_END
