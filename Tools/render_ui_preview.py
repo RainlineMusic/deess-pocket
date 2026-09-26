@@ -37,9 +37,9 @@ im=Image.alpha_composite(im,glow.filter(ImageFilter.GaussianBlur(6)));d=ImageDra
 d.line(pts,fill=(245,251,255,230),width=2)
 # Absolute repair threshold and one active signed response example.
 threshold_y=812-(-52.2+90)*650/90
-line=Image.new('RGBA',im.size);ImageDraw.Draw(line).line((left,threshold_y,right,threshold_y),fill=(255,24,237,140),width=2)
+line=Image.new('RGBA',im.size);ImageDraw.Draw(line).line((fx(3000),threshold_y,right,threshold_y),fill=(255,24,237,140),width=2)
 im=Image.alpha_composite(im,line.filter(ImageFilter.GaussianBlur(4)));d=ImageDraw.Draw(im)
-d.line((left,threshold_y,right,threshold_y),fill=(255,24,237,140),width=1)
+d.line((fx(3000),threshold_y,right,threshold_y),fill=(255,24,237,140),width=1)
 q=[]
 for f in freq:
  red=12/(1+math.exp(-5*(math.log2(f/2500))))

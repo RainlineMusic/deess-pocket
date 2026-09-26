@@ -10,6 +10,8 @@ consonant events before applying a fixed horizontal spectral threshold.
 | Low | −12…0 dB below 600 Hz during sibilants | 0 dB |
 | Sibilance Gain | −12…+12 dB added to every detected consonant | 0 dB |
 
+The spectral Repair acts above 3 kHz; the high-band detector sidechain also
+starts at 3 kHz. Low protects tonal voiced lows during consonant overlap.
 The 2048-point, 256-hop spectral processor has fixed 2047-sample lookahead
 latency (42.6 ms at 48 kHz). Stereo uses a linked detector and gain mask.
 Bypass crossfades to latency-aligned dry audio. Detection is independent of

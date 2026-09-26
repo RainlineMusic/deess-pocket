@@ -25,6 +25,11 @@ void DeessPocketEditor::DialStyle::drawRotarySlider(juce::Graphics& g, int x, in
     const auto centre = juce::Point<float>(x + w * .5f, y + h * .5f);
     const float radius = std::min(w, h) * .405f;
     const auto colour = slider.getName() == "THRESHOLD" ? pale : magenta;
+    g.setGradientFill(juce::ColourGradient(colour.withAlpha(.15f), centre.x, centre.y,
+                                           colour.withAlpha(0.0f), centre.x + radius * 1.8f,
+                                           centre.y, true));
+    g.fillEllipse(centre.x - radius * 1.8f, centre.y - radius * 1.8f,
+                  radius * 3.6f, radius * 3.6f);
     juce::Path ring, active;
     ring.addCentredArc(centre.x, centre.y, radius, radius, 0, start, end, true);
     active.addCentredArc(centre.x, centre.y, radius, radius, 0, start,
@@ -36,12 +41,12 @@ void DeessPocketEditor::DialStyle::drawRotarySlider(juce::Graphics& g, int x, in
                 juce::RectanglePlacement::stretchToFit);
     g.setColour(juce::Colour(0xff50606a).withAlpha(.55f));
     g.strokePath(ring, juce::PathStrokeType(2.5f));
-    g.setColour(colour.withAlpha(.025f));
-    g.strokePath(active, juce::PathStrokeType(23.0f));
-    g.setColour(colour.withAlpha(.07f));
-    g.strokePath(active, juce::PathStrokeType(13.0f));
-    g.setColour(colour.withAlpha(.20f));
-    g.strokePath(active, juce::PathStrokeType(7.0f));
+    g.setColour(colour.withAlpha(.055f));
+    g.strokePath(active, juce::PathStrokeType(29.0f));
+    g.setColour(colour.withAlpha(.12f));
+    g.strokePath(active, juce::PathStrokeType(16.0f));
+    g.setColour(colour.withAlpha(.31f));
+    g.strokePath(active, juce::PathStrokeType(8.0f));
     g.setColour(colour);
     g.strokePath(active, juce::PathStrokeType(3.6f));
     const float angle = start + proportion * (end - start);
@@ -217,16 +222,16 @@ void DeessPocketEditor::paint(juce::Graphics& g) {
         }
         auto outline = fill;
         fill.lineTo(right, 862); fill.lineTo(left, 862); fill.closeSubPath();
-        juce::ColourGradient spectral(juce::Colour(0xfff4fbff).withAlpha(.80f), 0, 180,
-                                      juce::Colour(0xff071a27).withAlpha(.12f), 0, 862, false);
-        spectral.addColour(.32, juce::Colour(0xffb5c5d0).withAlpha(.59f));
-        spectral.addColour(.70, juce::Colour(0xff4f6879).withAlpha(.28f));
+        juce::ColourGradient spectral(juce::Colour(0xfff8fcff).withAlpha(.94f), 0, 180,
+                                      juce::Colour(0xff071a27).withAlpha(.06f), 0, 862, false);
+        spectral.addColour(.32, juce::Colour(0xffd6e1e9).withAlpha(.77f));
+        spectral.addColour(.70, juce::Colour(0xff587283).withAlpha(.29f));
         g.setGradientFill(spectral);
         g.fillPath(fill);
-        g.setColour(juce::Colour(0xffdceaf3).withAlpha(.08f));
-        g.strokePath(outline, juce::PathStrokeType(7.0f));
-        g.setColour(juce::Colour(0xffedf6fc).withAlpha(.18f));
-        g.strokePath(outline, juce::PathStrokeType(3.0f));
+        g.setColour(juce::Colour(0xffdceaf3).withAlpha(.075f));
+        g.strokePath(outline, juce::PathStrokeType(13.0f));
+        g.setColour(juce::Colour(0xffedf6fc).withAlpha(.22f));
+        g.strokePath(outline, juce::PathStrokeType(5.0f));
         g.setColour(juce::Colour(0xfff4fbff).withAlpha(.88f));
         g.strokePath(outline, juce::PathStrokeType(1.1f));
     }
@@ -235,12 +240,13 @@ void DeessPocketEditor::paint(juce::Graphics& g) {
     const float threshold = float(dials[0].getValue());
     const float thresholdY = juce::jlimit(145.0f, 862.0f,
         812.0f - (threshold + range) * (650.0f / range));
-    g.setColour(magenta.withAlpha(.08f));
-    g.drawLine(left, thresholdY, right, thresholdY, 7.0f);
-    g.setColour(magenta.withAlpha(.22f));
-    g.drawLine(left, thresholdY, right, thresholdY, 2.0f);
+    const float repairStart = freqX(3000.0f);
+    g.setColour(magenta.withAlpha(.055f));
+    g.drawLine(repairStart, thresholdY, right, thresholdY, 12.0f);
+    g.setColour(magenta.withAlpha(.18f));
+    g.drawLine(repairStart, thresholdY, right, thresholdY, 4.0f);
     g.setColour(magenta.withAlpha(.60f));
-    g.drawLine(left, thresholdY, right, thresholdY, .8f);
+    g.drawLine(repairStart, thresholdY, right, thresholdY, .8f);
 
     // One live signed response: Repair plus dynamic Low and Sibilance Gain.
     juce::Path response, responseFill;
@@ -257,12 +263,23 @@ void DeessPocketEditor::paint(juce::Graphics& g) {
     g.setGradientFill(juce::ColourGradient(magenta.withAlpha(.20f), 0, 180,
                                            magenta.withAlpha(.005f), 0, 850, false));
     g.fillPath(responseFill);
-    g.setColour(magenta.withAlpha(.045f));
-    g.strokePath(response, juce::PathStrokeType(16.0f));
-    g.setColour(magenta.withAlpha(.12f));
-    g.strokePath(response, juce::PathStrokeType(7.0f));
+    const bool active = std::any_of(display.gainDb.begin(), display.gainDb.end(),
+                                    [](float db) { return std::abs(db) > .5f; });
+    if (active) {
+        juce::Path aura = response;
+        aura.lineTo(right, 500.0f);
+        aura.lineTo(left, 500.0f);
+        aura.closeSubPath();
+        g.setGradientFill(juce::ColourGradient(magenta.withAlpha(.09f), 0, 195,
+                                               magenta.withAlpha(0.0f), 0, 500, false));
+        g.fillPath(aura);
+    }
+    g.setColour(magenta.withAlpha(.065f));
+    g.strokePath(response, juce::PathStrokeType(32.0f));
+    g.setColour(magenta.withAlpha(.13f));
+    g.strokePath(response, juce::PathStrokeType(15.0f));
     g.setColour(magenta.withAlpha(.30f));
-    g.strokePath(response, juce::PathStrokeType(3.8f));
+    g.strokePath(response, juce::PathStrokeType(6.0f));
     g.setColour(magenta);
     g.strokePath(response, juce::PathStrokeType(1.8f));
 

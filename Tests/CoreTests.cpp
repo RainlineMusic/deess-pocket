@@ -38,6 +38,31 @@ int main() {
         return 3;
     }
 
+    // A fricative overlapping a voiced tone must not let Low pull down the
+    // 220 Hz voice. Repair itself is restricted to bins at/above 3 kHz.
+    auto voicedProjection = [&](float lowDb) {
+        engine.reset();
+        engine.setControls({-72.0f, 21.0f, lowDb, 0.0f, false});
+        std::mt19937 generator(31337);
+        double projection = 0.0;
+        for (int i = 0; i < count; ++i) {
+            const float voiced = 0.2f * std::sin(2.0 * 3.141592653589793 * 220.0 * i / 48000.0);
+            const float x = i > 8000 && i < 40000 ? voiced + 0.18f * random(generator) : voiced;
+            float l, r; engine.process(x, x, l, r);
+            if (i > 17000 && i < 35000) {
+                const int aligned = i - engine.latencySamples();
+                projection += l * std::sin(2.0 * 3.141592653589793 * 220.0 * aligned / 48000.0);
+            }
+        }
+        return projection;
+    };
+    const double normalVoice = voicedProjection(0.0f);
+    const double protectedVoice = voicedProjection(-12.0f);
+    if (normalVoice < 100.0 || protectedVoice / normalVoice < 0.90) {
+        std::cerr << "Low touched voiced overlap: " << protectedVoice / normalVoice << '\n';
+        return 8;
+    }
+
     engine.reset();
     engine.setControls({-90.0f, 21.0f, -12.0f, 12.0f, false});
     float falseAction = 0.0f;

@@ -25,10 +25,13 @@ void Engine::prepare(double sampleRate, int channelCount) {
         const float hz = k * binHz;
         lowShelfWeight[k] = 1.0f - smooth(std::log2(300.0f), std::log2(1200.0f),
                                           std::log2(std::max(20.0f, hz)));
+        // Repair has no action below 3 kHz; soften the upper edge only.
+        repairBandWeight[k] = smooth(3000.0f, 3500.0f, hz);
     }
     bypassCoefficient = std::exp(-1.0f / static_cast<float>(rate * 0.002));
     repairAttack = std::exp(-float(hopSize / rate) / 0.001f);
     repairRelease = std::exp(-float(hopSize / rate) / 0.030f);
+    lowRelease = std::exp(-float(hopSize / rate) / 0.006f);
     reset();
 }
 
@@ -37,6 +40,7 @@ void Engine::reset() noexcept {
     confidenceSmoothed = 0.0f;
     noiseDb = -85.0f;
     eventEnvelope = 0.0f;
+    lowEnvelope = 0.0f;
     bypassMix = controls.bypass ? 1.0f : 0.0f;
     eventActive = false;
     meter = {};
@@ -94,7 +98,8 @@ void Engine::processFrame(std::int64_t start) noexcept {
     }
     float low = 1.0e-12f, high = 1.0e-12f, mid = 1.0e-12f, total = 1.0e-12f;
     float centroid = 0.0f, logSum = 0.0f, arithmetic = 0.0f;
-    int highBins = 0;
+    float lowLogSum = 0.0f, lowArithmetic = 0.0f;
+    int highBins = 0, lowBins = 0;
     for (int k = 0; k < bins; ++k) {
         float magnitude = std::abs(spectra[0][k]);
         if (channels == 2) magnitude = std::max(magnitude, std::abs(spectra[1][k]));
@@ -102,12 +107,17 @@ void Engine::processFrame(std::int64_t start) noexcept {
         const float hz = k * binHz;
         const float energy = magnitude * magnitude;
         if (hz >= 150.0f && hz < 1500.0f) low += energy;
-        if (hz >= 1500.0f && hz < 4000.0f) mid += energy;
-        if (hz >= 4000.0f && hz <= std::min(14000.0f, static_cast<float>(rate * 0.48))) {
+        if (hz >= 1500.0f && hz < 3000.0f) mid += energy;
+        if (hz >= 3000.0f && hz <= std::min(14000.0f, static_cast<float>(rate * 0.48))) {
             high += energy;
             arithmetic += energy;
             logSum += std::log(energy + 1.0e-12f);
             ++highBins;
+        }
+        if (hz >= 80.0f && hz < 600.0f) {
+            lowArithmetic += energy;
+            lowLogSum += std::log(energy + 1.0e-12f);
+            ++lowBins;
         }
         if (hz >= 150.0f && hz < 14000.0f) {
             total += energy;
@@ -119,6 +129,8 @@ void Engine::processFrame(std::int64_t start) noexcept {
     const float spectralCentroid = centroid / total;
     const float flatness = highBins > 0
         ? std::exp(logSum / highBins) / (arithmetic / highBins + 1.0e-12f) : 0.0f;
+    const float lowFlatness = lowBins > 0
+        ? std::exp(lowLogSum / lowBins) / (lowArithmetic / lowBins + 1.0e-12f) : 0.0f;
     // Detector confidence is independent of the user's threshold. A low threshold
     // can never make a vowel qualify as a fricative by itself.
     const float presence = smooth(3.0f, 18.0f, hfDb - noiseDb)
@@ -138,6 +150,11 @@ void Engine::processFrame(std::int64_t start) noexcept {
     const float eventTarget = eventActive ? 1.0f : 0.0f;
     const float eventCoeff = eventActive ? repairAttack : repairRelease;
     eventEnvelope = eventTarget + eventCoeff * (eventEnvelope - eventTarget);
+    // A simultaneous voiced vowel carries coherent harmonics below 600 Hz.
+    // Protect that tonal low end even while the high-band fricative gate is open.
+    const float lowTarget = eventActive ? smooth(0.10f, 0.38f, lowFlatness) : 0.0f;
+    lowEnvelope = lowTarget + (lowTarget > lowEnvelope ? repairAttack : lowRelease)
+                            * (lowEnvelope - lowTarget);
     meter.confidence = confidenceSmoothed;
     meter.detectorDb = hfDb;
     meter.event = eventActive;
@@ -148,12 +165,14 @@ void Engine::processFrame(std::int64_t start) noexcept {
     for (int k = 0; k < bins; ++k) {
         const float slope = controls.ratio >= 20.5f ? 1.0f : 1.0f - 1.0f / controls.ratio;
         const float targetRepair = eventActive
-            ? std::max(0.0f, magnitudes[k] - controls.thresholdDb) * slope : 0.0f;
+            ? std::max(0.0f, magnitudes[k] - controls.thresholdDb) * slope
+              * repairBandWeight[k] : 0.0f;
         const float rCoeff = targetRepair > repairSmoothed[k] ? repairAttack : repairRelease;
         repairSmoothed[k] = targetRepair + rCoeff * (repairSmoothed[k] - targetRepair);
         meter.repairPeakDb = std::max(meter.repairPeakDb, repairSmoothed[k]);
-        const float netDb = eventEnvelope * (controls.sibilanceGainDb
-                            + controls.lowDb * lowShelfWeight[k]) - repairSmoothed[k];
+        const float netDb = eventEnvelope * controls.sibilanceGainDb
+                            + lowEnvelope * controls.lowDb * lowShelfWeight[k]
+                            - repairSmoothed[k];
         const float gain = linear(netDb);
         for (int ch = 0; ch < channels; ++ch) {
             spectra[ch][k] *= gain;
@@ -164,8 +183,9 @@ void Engine::processFrame(std::int64_t start) noexcept {
         const float f = 20.0f * std::pow(1000.0f, i / float(displayBands - 1));
         const int k = std::clamp(static_cast<int>(std::round(f / binHz)), 0, bins - 1);
         meter.preSpectrumDb[i] = magnitudes[k];
-        meter.gainDb[i] = eventEnvelope * (controls.sibilanceGainDb
-                          + controls.lowDb * lowShelfWeight[k]) - repairSmoothed[k];
+        meter.gainDb[i] = eventEnvelope * controls.sibilanceGainDb
+                          + lowEnvelope * controls.lowDb * lowShelfWeight[k]
+                          - repairSmoothed[k];
     }
     for (int ch = 0; ch < channels; ++ch) {
         fft(spectra[ch], true);

@@ -16,7 +16,7 @@ The revised background adds layered navy and blue haze with a darker vignette.
 The live analyzer uses a brighter pearl contour with multiple faint glow
 strokes and a graduated fill. Dial arcs use three soft strokes beneath the
 sharp stroke. A single magenta trace shows live combined spectral gain; a
-separate thin horizontal line indicates the absolute Repair threshold.
+separate thin horizontal line beginning at 3 kHz indicates the absolute Repair threshold.
 
 Both header hit targets use a transparent JUCE look and feel, eliminating
 default button borders. Bypass freezes a precomputed blurred lower-region

@@ -51,7 +51,7 @@ private:
     Meters meter;
     float confidenceSmoothed = 0.0f;
     float noiseDb = -85.0f;
-    float eventEnvelope = 0.0f, bypassMix = 0.0f;
+    float eventEnvelope = 0.0f, lowEnvelope = 0.0f, bypassMix = 0.0f;
     bool eventActive = false;
     std::array<float, fftSize> window{};
     std::array<std::array<float, fftSize>, 2> input{};
@@ -60,7 +60,8 @@ private:
     std::array<float, ringSize> norm{};
     std::array<Spectrum, 2> spectra{};
     std::array<float, fftSize / 2 + 1> magnitudes{};
-    std::array<float, fftSize / 2 + 1> repairSmoothed{}, lowShelfWeight{};
+    std::array<float, fftSize / 2 + 1> repairSmoothed{}, lowShelfWeight{}, repairBandWeight{};
     float bypassCoefficient = 0.0f, repairAttack = 0.0f, repairRelease = 0.0f;
+    float lowRelease = 0.0f;
 };
 } // namespace deess

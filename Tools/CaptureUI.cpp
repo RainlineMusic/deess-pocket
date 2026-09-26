@@ -25,7 +25,10 @@ int main(int argc, char** argv) {
         }
         processor.processBlock(block, midi);
     }
-    juce::MessageManager::getInstance()->runDispatchLoopUntil(250);
+    juce::Timer::callAfterDelay(250, [] {
+        juce::MessageManager::getInstance()->stopDispatchLoop();
+    });
+    juce::MessageManager::getInstance()->runDispatchLoop();
     const auto snapshot = editor->createComponentSnapshot(editor->getLocalBounds(), true);
     const juce::File target(argv[1]);
     auto stream = target.createOutputStream();

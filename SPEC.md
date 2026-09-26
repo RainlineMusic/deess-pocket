@@ -12,14 +12,17 @@ Four controls, all automatable:
 
 | Parameter | Range / default | Processing |
 | --- | --- | --- |
-| Threshold | −90…0 dBFS / −52.2 dBFS | Horizontal absolute per-bin threshold when a sibilant is detected. |
+| Threshold | −90…0 dBFS / −52.2 dBFS | Horizontal absolute per-bin threshold in the spectral band above 3 kHz when a sibilant is detected. |
 | Ratio | 1:1…20:1 and ∞:1 / 4:1 | Reduces each bin's positive excess over Threshold by `1 − 1/ratio`; at ∞:1 the full excess is removed. No range cap. |
-| Low | −12…0 dB / 0 dB | Dynamic low shelf with 600 Hz midpoint, fading between about 300 Hz and 1.2 kHz. |
+| Low | −12…0 dB / 0 dB | Dynamic low shelf with 600 Hz midpoint, fading between about 300 Hz and 1.2 kHz. It protects tonal voiced lows during overlapping consonants. |
 | Sibilance Gain | −12…+12 dB / 0 dB | Adds the same signed dB gain to every detected sibilant, regardless of its original level. |
 
-Repair uses approximately 1 ms attack and 30 ms release for each spectral bin.
-The event gain envelope uses the same timings. Low and Sibilance Gain do not
-alter vowels while the gate is closed. The three dB contributions sum into one
+Repair uses approximately 1 ms attack and 30 ms release for each spectral bin,
+starting only at 3 kHz with a short 3–3.5 kHz transition. The detector's
+high-band sidechain starts at 3 kHz. Low has its own fast 6 ms release and
+turns down when the sub-600 Hz spectrum is tonal, protecting overlapping voiced
+material. The event gain envelope uses 1/30 ms timing. Low and Sibilance Gain
+do not alter vowels while the gate is closed. The three dB contributions sum into one
 spectral gain mask and one inverse STFT. The processing threshold is measured
 on the plugin's normalized Hann-window FFT bins; the numeric −52.2 dB setting
 is a starting value, not a calibration claim about SpecCraft's display.
@@ -39,7 +42,7 @@ Canvas: 1536 × 922 reference coordinates, uniformly scaled at 100%, 110%,
 | Main field | Deep navy layered radial and vertical gradient, slightly brighter around spectrum and controls, dark edges. No visible rectangular button backgrounds. |
 | Analyzer | Live 1024-point logarithmic plot, frequency 20 Hz–20 kHz, x=36–1480; bright pearl contour, several translucent glow strokes and a white/steel blue fill fading into the dark lower field. |
 | Grid | Hairline logarithmic verticals, subtle 6 dB horizontals, labels at y≈885 and right edge. Keep it under the live signal. |
-| Repair | Thin magenta horizontal input threshold indicator; one vivid magenta response curve with a soft multi-pass glow, tracking the signed combined gain. |
+| Repair | Thin magenta horizontal input threshold indicator starting at 3 kHz; one vivid magenta response curve with a soft multi-pass glow, tracking the signed combined gain. |
 | Controls | Centers x=475,666,855,1048; labels near y=690; dark shaded 112 px face, luminous fine arcs and short white pointer; values near y=844. Labels THRESHOLD, RATIO, LOW, SIBILANCE GAIN. |
 | Bypass | Header and controls in header remain sharp. Blur/dim only y≥104, with centered BYPASS text. Cache the blurred lower snapshot before a click; visual state flips immediately. |
 
