@@ -137,15 +137,23 @@ void DeessPocketEditor::updateResponseGlow() {
     juce::Graphics pg(source);
     pg.addTransform(juce::AffineTransform::scale(.25f));
     juce::Path curve;
-    for (int i = 0; i < deess::displayBands; ++i) {
+    int first = 0, last = deess::displayBands - 1;
+    while (first < deess::displayBands && std::abs(display.gainDb[first]) <= .3f) ++first;
+    while (last >= first && std::abs(display.gainDb[last]) <= .3f) --last;
+    for (int i = first; i <= last; ++i) {
         const float f = 20.0f * std::pow(1000.0f, i / float(deess::displayBands - 1));
         const float x = 36.0f + std::log(f / 20.0f) / std::log(1000.0f) * (1480.0f - 36.0f);
         const float y = responseY(display.gainDb[i]);
-        if (i == 0) curve.startNewSubPath(x, y);
+        if (i == first) curve.startNewSubPath(x, y);
         else curve.lineTo(x, y);
     }
-    pg.setColour(magenta.withAlpha(.9f));
-    pg.strokePath(curve, juce::PathStrokeType(7.0f));
+    const bool active = last >= first && std::any_of(
+        display.gainDb.begin() + first, display.gainDb.begin() + last + 1,
+        [](float db) { return std::abs(db) > .5f; });
+    if (active) {
+        pg.setColour(magenta.withAlpha(.9f));
+        pg.strokePath(curve, juce::PathStrokeType(7.0f));
+    }
     responseGlow = juce::Image(juce::Image::ARGB, width, height, true);
     juce::ImageConvolutionKernel blur(13);
     blur.createGaussianBlur(4.0f);
@@ -277,24 +285,33 @@ void DeessPocketEditor::paint(juce::Graphics& g) {
     const float thresholdY = juce::jlimit(145.0f, 862.0f,
         812.0f - (threshold + range) * (650.0f / range));
     const float repairStart = freqX(3000.0f);
-    g.setColour(magenta.withAlpha(.055f));
-    g.drawLine(repairStart, thresholdY, right, thresholdY, 12.0f);
-    g.setColour(magenta.withAlpha(.18f));
+    g.setColour(pale.withAlpha(.09f));
     g.drawLine(repairStart, thresholdY, right, thresholdY, 4.0f);
-    g.setColour(magenta.withAlpha(.60f));
+    g.setColour(pale.withAlpha(.36f));
     g.drawLine(repairStart, thresholdY, right, thresholdY, .8f);
 
+    // Draw the response only where the audio gain differs from zero.
+    int first = 0, last = deess::displayBands - 1;
+    while (first < deess::displayBands && std::abs(display.gainDb[first]) <= .3f) ++first;
+    while (last >= first && std::abs(display.gainDb[last]) <= .3f) --last;
+    const bool active = last >= first && std::any_of(
+        display.gainDb.begin() + first, display.gainDb.begin() + last + 1,
+        [](float db) { return std::abs(db) > .5f; });
+    if (active) {
     // One live signed response: Repair plus dynamic Low and Sibilance Gain.
     juce::Path response, responseFill;
-    for (int i = 0; i < deess::displayBands; ++i) {
+    float firstX = 0.0f, lastX = 0.0f;
+    for (int i = first; i <= last; ++i) {
         const float f = 20.0f * std::pow(1000.0f, i / float(deess::displayBands - 1));
+        const float x = freqX(f);
         const float y = responseY(display.gainDb[i]);
-        if (i == 0) response.startNewSubPath(freqX(f), y);
-        else response.lineTo(freqX(f), y);
+        if (i == first) { response.startNewSubPath(x, y); firstX = x; }
+        else response.lineTo(x, y);
+        lastX = x;
     }
     responseFill = response;
-    responseFill.lineTo(right, responseY(0));
-    responseFill.lineTo(left, responseY(0));
+    responseFill.lineTo(lastX, responseY(0));
+    responseFill.lineTo(firstX, responseY(0));
     responseFill.closeSubPath();
     g.setGradientFill(juce::ColourGradient(magenta.withAlpha(.20f), 0, 180,
                                            magenta.withAlpha(.005f), 0, 850, false));
@@ -305,12 +322,10 @@ void DeessPocketEditor::paint(juce::Graphics& g) {
                     juce::RectanglePlacement::stretchToFit);
         g.setOpacity(1.0f);
     }
-    const bool active = std::any_of(display.gainDb.begin(), display.gainDb.end(),
-                                    [](float db) { return std::abs(db) > .5f; });
-    if (active) {
+    {
         juce::Path aura = response;
-        aura.lineTo(right, 500.0f);
-        aura.lineTo(left, 500.0f);
+        aura.lineTo(lastX, 500.0f);
+        aura.lineTo(firstX, 500.0f);
         aura.closeSubPath();
         g.setGradientFill(juce::ColourGradient(magenta.withAlpha(.09f), 0, 195,
                                                magenta.withAlpha(0.0f), 0, 500, false));
@@ -320,6 +335,7 @@ void DeessPocketEditor::paint(juce::Graphics& g) {
     g.strokePath(response, juce::PathStrokeType(5.0f));
     g.setColour(magenta);
     g.strokePath(response, juce::PathStrokeType(1.8f));
+    }
 
     const char* names[] = {"THRESHOLD", "RATIO", "LOW", "SIBILANCE GAIN"};
     const int cx[] = {475, 666, 855, 1048};

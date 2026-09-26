@@ -18,9 +18,10 @@ int main(int argc, char** argv) {
     for (int offset = 0; offset < 24576; offset += block.getNumSamples()) {
         for (int i = 0; i < block.getNumSamples(); ++i) {
             const auto time = float(offset + i) / 48000.0f;
-            const float voice = 0.12f * std::sin(juce::MathConstants<float>::twoPi * 215.0f * time)
-                              + 0.055f * std::sin(juce::MathConstants<float>::twoPi * 430.0f * time)
-                              + 0.20f * noise(rng);
+            const float voice = offset + i >= 12000 ? 0.28f * noise(rng)
+                : 0.12f * std::sin(juce::MathConstants<float>::twoPi * 215.0f * time)
+                + 0.055f * std::sin(juce::MathConstants<float>::twoPi * 430.0f * time)
+                + 0.025f * noise(rng);
             block.setSample(0, i, voice);
             block.setSample(1, i, voice);
         }
@@ -34,3 +35,4 @@ int main(int argc, char** argv) {
     juce::PNGImageFormat png;
     return png.writeImageToStream(snapshot, *stream) ? 0 : 3;
 }
+
