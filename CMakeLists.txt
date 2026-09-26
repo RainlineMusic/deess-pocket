@@ -51,4 +51,12 @@ if(DEESS_BUILD_PLUGIN)
     target_link_libraries(DeessPocket PRIVATE deess_core DeessArtwork juce::juce_audio_utils juce::juce_dsp)
     target_compile_definitions(DeessPocket PUBLIC JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
     juce_generate_juce_header(DeessPocket)
+    if(APPLE)
+        add_executable(deess_ui_capture Tools/CaptureUI.cpp
+            Source/Plugin/PluginProcessor.cpp Source/Plugin/PluginEditor.cpp)
+        target_link_libraries(deess_ui_capture PRIVATE deess_core DeessArtwork
+            juce::juce_audio_utils juce::juce_dsp)
+        target_compile_definitions(deess_ui_capture PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+        juce_generate_juce_header(deess_ui_capture)
+    endif()
 endif()
