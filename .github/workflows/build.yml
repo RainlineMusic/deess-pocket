@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PLUGIN_VERSION: "0.2.0"
+  PLUGIN_VERSION: "0.3.0"
 
 jobs:
   macos:
@@ -38,6 +38,20 @@ jobs:
 
       - name: Run DSP tests
         run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Capture native JUCE interface
+        run: |
+          cmake --build build --config Release --target deess_ui_capture
+          build/deess_ui_capture_artefacts/Release/deess_ui_capture "$PWD/deess-ui-macos.png"
+          echo UI_PNG_BEGIN
+          base64 < deess-ui-macos.png
+          echo UI_PNG_END
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DeessPocket-v${{ env.PLUGIN_VERSION }}-macOS-UI
+          path: deess-ui-macos.png
+          if-no-files-found: error
 
       - name: Validate macOS VST3
         run: |

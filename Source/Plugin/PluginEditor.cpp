@@ -6,15 +6,27 @@
 namespace {
 constexpr float pi = 3.14159265358979323846f;
 constexpr int baseWidth = 1536, baseHeight = 922, headerHeight = 104;
-const juce::Colour pale(0xffdbe6ec), cyan(0xff00d8f8), yellow(0xffffce00), magenta(0xfff100e9);
-float responseY(float db, float scale) { return (162.0f - db * 9.0f) * scale; }
+const juce::Colour pale(0xffe6f1f6), magenta(0xffff18ed);
+float responseY(float db, int range) {
+    return 162.0f - db * (db > 0.0f ? 4.7f : 650.0f / float(range));
+}
+float visualGain(const std::array<float, deess::displayBands>& gain, int index) {
+    float sum = 0.0f, weight = 0.0f;
+    for (int offset = -5; offset <= 5; ++offset) {
+        const int bin = juce::jlimit(0, deess::displayBands - 1, index + offset);
+        const float w = float(6 - std::abs(offset));
+        sum += gain[bin] * w;
+        weight += w;
+    }
+    return sum / weight;
+}
 }
 
 juce::Font DeessPocketEditor::font(float size) const {
 #if JUCE_MAC
-    return juce::Font("SF Pro Display", size, juce::Font::plain);
+    return juce::Font("SF Pro Display", "Light", size);
 #elif JUCE_WINDOWS
-    return juce::Font("Segoe UI", size, juce::Font::plain);
+    return juce::Font("Segoe UI", "Light", size);
 #else
     return juce::Font(juce::Font::getDefaultSansSerifFontName(), size, juce::Font::plain);
 #endif
@@ -24,8 +36,7 @@ void DeessPocketEditor::DialStyle::drawRotarySlider(juce::Graphics& g, int x, in
     int w, int h, float proportion, float start, float end, juce::Slider& slider) {
     const auto centre = juce::Point<float>(x + w * .5f, y + h * .5f);
     const float radius = std::min(w, h) * .405f;
-    const auto colour = slider.getName() == "THRESHOLD" ? pale
-        : slider.getName() == "WIDE" ? cyan : slider.getName() == "SPLIT" ? yellow : magenta;
+    const auto colour = slider.getName() == "THRESHOLD" ? pale : magenta;
     juce::Path ring, active;
     ring.addCentredArc(centre.x, centre.y, radius, radius, 0, start, end, true);
     active.addCentredArc(centre.x, centre.y, radius, radius, 0, start,
@@ -37,7 +48,7 @@ void DeessPocketEditor::DialStyle::drawRotarySlider(juce::Graphics& g, int x, in
                 juce::RectanglePlacement::stretchToFit);
     g.setColour(juce::Colour(0xff50606a).withAlpha(.55f));
     g.strokePath(ring, juce::PathStrokeType(2.5f));
-    g.setColour(colour.withAlpha(.16f));
+    g.setColour(colour.withAlpha(.08f));
     g.strokePath(active, juce::PathStrokeType(9.0f));
     g.setColour(colour);
     g.strokePath(active, juce::PathStrokeType(3.6f));
@@ -51,28 +62,26 @@ void DeessPocketEditor::DialStyle::drawRotarySlider(juce::Graphics& g, int x, in
 
 DeessPocketEditor::DeessPocketEditor(DeessPocketProcessor& p)
     : AudioProcessorEditor(p), processor(p) {
-    const char* ids[] = {"threshold", "wide", "split", "repair"};
-    const char* titles[] = {"THRESHOLD", "WIDE", "SPLIT", "REPAIR"};
+    const char* ids[] = {"threshold", "ratio", "low", "sibilanceGain"};
+    const char* titles[] = {"THRESHOLD", "RATIO", "LOW", "SIBILANCE GAIN"};
     for (int i = 0; i < 4; ++i) {
         dials[i].setName(titles[i]);
         dials[i].setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
         dials[i].setRotaryParameters(1.25f * pi, 2.75f * pi, true);
         dials[i].setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
         dials[i].setLookAndFeel(&style);
+        dials[i].onValueChange = [this] { repaint(); };
         addAndMakeVisible(dials[i]);
         attachments[i] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
             processor.params, ids[i], dials[i]);
     }
     menuButton.setButtonText({});
     powerButton.setButtonText({});
-    menuButton.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
-    powerButton.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
-    menuButton.setColour(juce::TextButton::buttonOnColourId, juce::Colours::transparentBlack);
-    powerButton.setColour(juce::TextButton::buttonOnColourId, juce::Colours::transparentBlack);
+    menuButton.setLookAndFeel(&chromeStyle);
+    powerButton.setLookAndFeel(&chromeStyle);
     menuButton.onClick = [this] { showMenu(); };
     powerButton.setClickingTogglesState(true);
     powerButton.onClick = [this] {
-        if (powerButton.getToggleState()) updateBypassSnapshot();
         previousBypass = powerButton.getToggleState();
         repaint();
     };
@@ -94,6 +103,8 @@ DeessPocketEditor::~DeessPocketEditor() {
     bypassAttachment.reset();
     attachments = {};
     for (auto& d : dials) d.setLookAndFeel(nullptr);
+    menuButton.setLookAndFeel(nullptr);
+    powerButton.setLookAndFeel(nullptr);
 }
 
 void DeessPocketEditor::resized() {
@@ -123,9 +134,66 @@ void DeessPocketEditor::timerCallback() {
                             : current + release * (visualSpectrum[i] - current);
     }
     const bool bypassNow = powerButton.getToggleState() || processor.hostBypassed();
-    if (bypassNow && !previousBypass) updateBypassSnapshot();
+    if (++glowFrame % 2 == 0 || !responseGlow.isValid()) updateResponseGlow();
+    if (!bypassNow && ++snapshotCounter >= 45) {
+        snapshotCounter = 0;
+        updateBypassSnapshot();
+    }
     previousBypass = bypassNow;
     repaint();
+}
+
+void DeessPocketEditor::updateResponseGlow() {
+    constexpr int width = baseWidth / 4, height = baseHeight / 4;
+    juce::Image source(juce::Image::ARGB, width, height, true);
+    juce::Graphics pg(source);
+    pg.addTransform(juce::AffineTransform::scale(.25f));
+    juce::Path curve;
+    int first = 0, last = deess::displayBands - 1;
+    while (first < deess::displayBands && std::abs(visualGain(display.gainDb, first)) <= .3f) ++first;
+    while (last >= first && std::abs(visualGain(display.gainDb, last)) <= .3f) --last;
+    const bool active = last >= first && std::any_of(
+        display.gainDb.begin() + first, display.gainDb.begin() + last + 1,
+        [](float db) { return std::abs(db) > .5f; });
+    if (active) {
+    first = std::max(0, first - 7);
+    last = std::min(deess::displayBands - 1, last + 7);
+    for (int i = first; i <= last; ++i) {
+        const float f = 20.0f * std::pow(1000.0f, i / float(deess::displayBands - 1));
+        const float x = 36.0f + std::log(f / 20.0f) / std::log(1000.0f) * (1480.0f - 36.0f);
+        const float y = responseY(visualGain(display.gainDb, i), range);
+        if (i == first) curve.startNewSubPath(x, y);
+        else curve.lineTo(x, y);
+    }
+        pg.setColour(magenta.withAlpha(.9f));
+        pg.strokePath(curve, juce::PathStrokeType(7.0f));
+    }
+    responseGlow = juce::Image(juce::Image::ARGB, width, height, true);
+    juce::ImageConvolutionKernel blur(13);
+    blur.createGaussianBlur(4.0f);
+    blur.applyToImage(responseGlow, source, source.getBounds());
+}
+
+void DeessPocketEditor::updateDialGlow(int index) {
+    const double value = dials[index].getValue();
+    if (dialGlows[index].isValid() && std::abs(glowValues[index] - value) < .001) return;
+    glowValues[index] = value;
+    constexpr int n = 128;
+    juce::Image source(juce::Image::ARGB, n, n, true);
+    juce::Graphics pg(source);
+    pg.addTransform(juce::AffineTransform::scale(n / 230.0f));
+    const float fraction = juce::jlimit(0.0f, 1.0f,
+        float((value - dials[index].getMinimum()) /
+              (dials[index].getMaximum() - dials[index].getMinimum())));
+    juce::Path active;
+    active.addCentredArc(115.0f, 115.0f, 54.7f, 54.7f, 0,
+                         1.25f * pi, (1.25f + fraction * 1.5f) * pi, true);
+    pg.setColour((index == 0 ? pale : magenta).withAlpha(.94f));
+    pg.strokePath(active, juce::PathStrokeType(9.0f));
+    dialGlows[index] = juce::Image(juce::Image::ARGB, n, n, true);
+    juce::ImageConvolutionKernel blur(13);
+    blur.createGaussianBlur(4.0f);
+    blur.applyToImage(dialGlows[index], source, source.getBounds());
 }
 
 void DeessPocketEditor::updateBypassSnapshot() {
@@ -133,10 +201,16 @@ void DeessPocketEditor::updateBypassSnapshot() {
     capturingSnapshot = true;
     const auto source = createComponentSnapshot({0, top, getWidth(), getHeight() - top}, true);
     capturingSnapshot = false;
-    bypassSnapshot = juce::Image(juce::Image::ARGB, source.getWidth(), source.getHeight(), true);
-    juce::ImageConvolutionKernel blur(17);
-    blur.createGaussianBlur(6.5f);
-    blur.applyToImage(bypassSnapshot, source, source.getBounds());
+    const int w = std::max(1, source.getWidth() / 3);
+    const int h = std::max(1, source.getHeight() / 3);
+    juce::Image small(juce::Image::ARGB, w, h, true);
+    juce::Graphics sg(small);
+    sg.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
+    sg.drawImage(source, small.getBounds().toFloat(), juce::RectanglePlacement::stretchToFit);
+    bypassSnapshot = juce::Image(juce::Image::ARGB, w, h, true);
+    juce::ImageConvolutionKernel blur(11);
+    blur.createGaussianBlur(3.4f);
+    blur.applyToImage(bypassSnapshot, small, small.getBounds());
 }
 
 void DeessPocketEditor::paint(juce::Graphics& g) {
@@ -147,7 +221,7 @@ void DeessPocketEditor::paint(juce::Graphics& g) {
     g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
     g.drawImage(background, juce::Rectangle<float>(0, 0, baseWidth, baseHeight),
                 juce::RectanglePlacement::stretchToFit);
-    g.setColour(juce::Colour(0xff071c2b));
+    g.setColour(juce::Colour(0xff163145));
     g.drawLine(0, 103, 1536, 103, 1);
 
     // Header: lettering and spacing are fixed in reference coordinates.
@@ -159,7 +233,7 @@ void DeessPocketEditor::paint(juce::Graphics& g) {
     g.setColour(juce::Colour(0xff395160));
     g.drawLine(636, 65, 673, 65, .8f); g.drawLine(863, 65, 900, 65, .8f);
     for (int i = 0; i < 3; ++i) g.drawLine(37, 33 + i * 8, 64, 33 + i * 8, 1.2f);
-    g.setColour(juce::Colour(0xff546b79));
+    g.setColour(powerButton.getToggleState() ? juce::Colour(0xffd9eaf1) : juce::Colour(0xff607a8a));
     g.drawEllipse(1465, 26, 41, 41, 1.0f);
     juce::Path power;
     power.addCentredArc(1485.5f, 46.5f, 9, 9, 0, -.84f * pi, .84f * pi, true);
@@ -171,7 +245,7 @@ void DeessPocketEditor::paint(juce::Graphics& g) {
     const auto freqX = [&](float f) { return left + std::log(f / 20.0f) / std::log(1000.0f) * (right - left); };
     for (float f : {20.f, 50.f, 100.f, 200.f, 500.f, 1000.f, 2000.f, 5000.f, 10000.f, 20000.f}) {
         const float x = freqX(f);
-        g.setColour(juce::Colour(0xff18313f).withAlpha(.75f));
+        g.setColour(juce::Colour(0xff244358).withAlpha(.52f));
         g.drawLine(x, 104, x, 862, .8f);
         g.setColour(juce::Colour(0xffccd3d7));
         g.setFont(font(15));
@@ -179,12 +253,19 @@ void DeessPocketEditor::paint(juce::Graphics& g) {
         g.drawText(name, int(x - 25), 867, 50, 33, juce::Justification::centred);
     }
     for (int db = 0; db >= -60; db -= 6) {
-        const float y = responseY(float(db), 1);
+        const float y = responseY(float(db), range);
         g.setColour(juce::Colour(0xff24404e).withAlpha(db == 0 ? .82f : .38f));
         g.drawLine(15, y, 1482, y, db == 0 ? 1.f : .65f);
         g.setColour(juce::Colour(0xffabb8c2));
         g.setFont(font(14));
         g.drawText(juce::String(db) + (db == 0 ? " dB" : ""), 1487, int(y - 11), 47, 22,
+                   juce::Justification::left);
+    }
+    for (int db : {6, 12}) {
+        const float y = responseY(float(db), range);
+        g.setColour(juce::Colour(0xff9aaebc).withAlpha(.55f));
+        g.setFont(font(13));
+        g.drawText("+" + juce::String(db), 1487, int(y - 11), 47, 22,
                    juce::Justification::left);
     }
 
@@ -193,49 +274,100 @@ void DeessPocketEditor::paint(juce::Graphics& g) {
         for (int i = 0; i < SpectrumAnalyzer::points; ++i) {
             const float f = 20.0f * std::pow(1000.0f, i / float(SpectrumAnalyzer::points - 1));
             const float displayedDb = visualSpectrum[i] + tilt * std::log2(f / 1000.0f);
-            const float y = juce::jlimit(145.0f, 862.0f, 812.0f - (displayedDb + range) * (650.0f / range));
+            const float y = juce::jlimit(145.0f, 862.0f, responseY(displayedDb, range));
             if (i == 0) fill.startNewSubPath(freqX(f), y);
             else fill.lineTo(freqX(f), y);
         }
         auto outline = fill;
         fill.lineTo(right, 862); fill.lineTo(left, 862); fill.closeSubPath();
-        g.setGradientFill(juce::ColourGradient(juce::Colour(0xffd5e0e6).withAlpha(.46f), 0, 300,
-                                               juce::Colour(0xff718894).withAlpha(.05f), 0, 862, false));
+        juce::ColourGradient spectral(juce::Colour(0xfff8fcff).withAlpha(.94f), 0, 180,
+                                      juce::Colour(0xff071a27).withAlpha(.06f), 0, 862, false);
+        spectral.addColour(.32, juce::Colour(0xffd6e1e9).withAlpha(.77f));
+        spectral.addColour(.70, juce::Colour(0xff587283).withAlpha(.29f));
+        g.setGradientFill(spectral);
         g.fillPath(fill);
-        g.setColour(juce::Colour(0xffc3d0d7).withAlpha(.62f));
-        g.strokePath(outline, juce::PathStrokeType(1.0f));
+        g.setColour(juce::Colour(0xffdceaf3).withAlpha(.075f));
+        g.strokePath(outline, juce::PathStrokeType(13.0f));
+        g.setColour(juce::Colour(0xffedf6fc).withAlpha(.22f));
+        g.strokePath(outline, juce::PathStrokeType(5.0f));
+        g.setColour(juce::Colour(0xfff4fbff).withAlpha(.88f));
+        g.strokePath(outline, juce::PathStrokeType(1.1f));
     }
 
-    // Three truthful reduction layers: white/cyan full band, yellow high shelf,
-    // magenta total including time-varying repair. Unlike a static mockup,
-    // all traces flatten at zero reduction when nothing is being processed.
-    const float wideDb = display.wideDb;
-    const float splitDb = display.splitDb;
-    for (int layer = 0; layer < 3; ++layer) {
-        juce::Path p;
-        for (int i = 0; i < deess::displayBands; ++i) {
-            const float f = 20.0f * std::pow(1000.0f, i / float(deess::displayBands - 1));
-            const float shelf = juce::jlimit(0.0f, 1.0f,
-                (std::log2(f) - std::log2(3000.0f)) / (std::log2(16000.0f / 3.0f) - std::log2(3000.0f)));
-            const float d = layer == 0 ? wideDb : layer == 1 ? wideDb + splitDb * shelf
-                                                       : wideDb + splitDb * shelf + display.repairDb[i];
-            if (i == 0) p.startNewSubPath(freqX(f), responseY(-d, 1));
-            else p.lineTo(freqX(f), responseY(-d, 1));
-        }
-        g.setColour(layer == 0 ? cyan : layer == 1 ? yellow : magenta);
-        g.strokePath(p, juce::PathStrokeType(layer == 2 ? 1.8f : 1.3f));
+    // Repair is an absolute horizontal bin threshold on the input spectrum.
+    const float threshold = float(dials[0].getValue());
+    const float thresholdY = juce::jlimit(145.0f, 862.0f, responseY(threshold, range));
+    const float repairStart = freqX(3000.0f);
+    g.setColour(pale.withAlpha(.09f));
+    g.drawLine(repairStart, thresholdY, right, thresholdY, 4.0f);
+    g.setColour(pale.withAlpha(.36f));
+    g.drawLine(repairStart, thresholdY, right, thresholdY, .8f);
+
+    // Draw the response only where the audio gain differs from zero.
+    int first = 0, last = deess::displayBands - 1;
+    while (first < deess::displayBands && std::abs(visualGain(display.gainDb, first)) <= .3f) ++first;
+    while (last >= first && std::abs(visualGain(display.gainDb, last)) <= .3f) --last;
+    const bool active = last >= first && std::any_of(
+        display.gainDb.begin() + first, display.gainDb.begin() + last + 1,
+        [](float db) { return std::abs(db) > .5f; });
+    if (active) {
+    first = std::max(0, first - 7);
+    last = std::min(deess::displayBands - 1, last + 7);
+    // One live signed response: Repair plus dynamic Low and Sibilance Gain.
+    juce::Path response, responseFill;
+    float firstX = 0.0f, lastX = 0.0f;
+    for (int i = first; i <= last; ++i) {
+        const float f = 20.0f * std::pow(1000.0f, i / float(deess::displayBands - 1));
+        const float x = freqX(f);
+        const float y = responseY(visualGain(display.gainDb, i), range);
+        if (i == first) { response.startNewSubPath(x, y); firstX = x; }
+        else response.lineTo(x, y);
+        lastX = x;
+    }
+    responseFill = response;
+    responseFill.lineTo(lastX, responseY(0, range));
+    responseFill.lineTo(firstX, responseY(0, range));
+    responseFill.closeSubPath();
+    g.setGradientFill(juce::ColourGradient(magenta.withAlpha(.20f), 0, 180,
+                                           magenta.withAlpha(.005f), 0, 850, false));
+    g.fillPath(responseFill);
+    if (responseGlow.isValid()) {
+        g.setOpacity(.80f);
+        g.drawImage(responseGlow, juce::Rectangle<float>(0, 0, baseWidth, baseHeight),
+                    juce::RectanglePlacement::stretchToFit);
+        g.setOpacity(1.0f);
+    }
+    g.setColour(magenta.withAlpha(.16f));
+    g.strokePath(response, juce::PathStrokeType(5.0f));
+    g.setColour(magenta);
+    g.strokePath(response, juce::PathStrokeType(1.8f));
     }
 
-    const char* names[] = {"THRESHOLD", "WIDE", "SPLIT", "REPAIR"};
+    const char* names[] = {"THRESHOLD", "RATIO", "LOW", "SIBILANCE GAIN"};
     const int cx[] = {475, 666, 855, 1048};
-    g.setColour(pale);
     for (int i = 0; i < 4; ++i) {
-        g.setFont(font(17));
+        updateDialGlow(i);
+        const auto colour = i == 0 ? pale : magenta;
+        g.setGradientFill(juce::ColourGradient(colour.withAlpha(.13f), float(cx[i]), 767.0f,
+                                               colour.withAlpha(0.0f), float(cx[i] + 115),
+                                               767.0f, true));
+        g.fillEllipse(float(cx[i] - 115), 652.0f, 230.0f, 230.0f);
+        g.setOpacity(.85f);
+        g.drawImage(dialGlows[i], juce::Rectangle<float>(float(cx[i] - 115), 652.0f,
+                                                         230.0f, 230.0f),
+                    juce::RectanglePlacement::stretchToFit);
+        g.setOpacity(1.0f);
+    }
+    g.setColour(pale.withAlpha(.84f));
+    for (int i = 0; i < 4; ++i) {
+        g.setFont(font(16));
         g.drawText(names[i], cx[i] - 90, 674, 180, 31, juce::Justification::centred);
-        g.setFont(font(21));
-        const juce::String value = i == 0 && dials[i].getValue() <= -71.95 ? juce::String::fromUTF8("−∞ dB")
-            : i == 0 ? juce::String(dials[i].getValue(), 1) + " dB"
-            : juce::String(int(dials[i].getValue())) + "%";
+        g.setFont(font(20));
+        const auto v = dials[i].getValue();
+        const juce::String value = i == 0 ? juce::String(v, 1) + " dB"
+            : i == 1 ? (v >= 20.5 ? juce::String::fromUTF8("∞:1")
+                                : juce::String(v, 1) + ":1")
+            : (v > 0 ? "+" : "") + juce::String(v, 1) + " dB";
         g.drawText(value, cx[i] - 90, 826, 180, 35, juce::Justification::centred);
     }
 }

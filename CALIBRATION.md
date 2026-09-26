@@ -1,54 +1,31 @@
-# Calibration on the supplied vocal and SpecCraft reference
+# Vocal calibration
 
-## Vocal detector
+Offline-rendered `lera_vox_01.wav` (48 kHz, mono, 45.30 s) using Threshold
+−52.2 dBFS, Ratio 4:1, Low 0 dB, Sibilance Gain 0 dB. The 2048-point frame
+centers need not coincide exactly with handwritten timestamp boundaries.
 
-The detector was run on `lera_vox_01.wav` (48 kHz, 45.30 s). It opened at all
-nine supplied annotations. Because the detector uses a centred 2048-sample
-analysis window, reported frame centres and handwritten timestamps can differ
-by several tens of milliseconds.
+| Marked time | Peak confidence within ±0.1 s | Detected frames | Peak repair |
+| ---: | ---: | ---: | ---: |
+| 6.2 ч | .97 | 9 | 6.2 dB |
+| 6.5 с | 1.00 | 24 | 4.5 dB |
+| 6.8 ц | .95 | 12 | 6.7 dB |
+| 7.3 с | .88 | 7 | 8.1 dB |
+| 10.0 с | .96 | 12 | 7.4 dB |
+| 14.8 с | .98 | 9 | 9.4 dB |
+| 15.4 с | .95 | 6 | 5.0 dB |
+| 16.1 с | 1.00 | 20 | 5.3 dB |
+| 16.7 ц | 1.00 | 24 | 7.5 dB |
 
-| Annotation | Peak confidence | Peak Repair at 65% |
-|---:|---:|---:|
-| 6.2 s, ч | 0.966 | 12.60 dB |
-| 6.5 s, с | 0.998 | 13.50 dB |
-| 6.8 s, ц | 0.979 | 15.59 dB |
-| 7.3 s, с | 0.946 | 13.82 dB |
-| 10.0 s, с | 0.999 | 13.28 dB |
-| 14.8 s, с | 0.997 | 13.51 dB |
-| 15.4 s, с | 0.999 | 12.46 dB |
-| 16.1 s, с | 1.000 | 11.90 dB |
-| 16.7 s, ц | 1.000 | 17.47 dB |
+All nine marked events are found. This is only a recall check; the unlabelled
+events and false positives require listening. The supplied short dry/WET pair
+processed by SpecCraft demonstrates the intended result, but equal numerical
+threshold values do not guarantee identical spectral cuts: FFT normalization,
+internal slope, and filtering are not published. Tune the plugin by ear against
+that pair, especially for whistles and high-frequency grain.
 
-This confirms recall on the marked examples. It does not prove false-positive
-performance: the later unlabelled events must be checked by ear or labelled.
-
-## SpecCraft dry/wet pair
-
-The files are sample-aligned and mono duplicated into two channels. The
-SpecCraft example reduces the broad upper consonant band, rather than only
-isolated single-bin peaks. Its integrated change is approximately:
-
-| Band | SpecCraft | Deess Pocket Repair 65% |
-|---|---:|---:|
-| 1.8–4 kHz | 0.00 dB | 0.00 dB |
-| 4–8 kHz | −0.50 dB | −0.75 dB |
-| 8–12 kHz | −6.63 dB | −5.27 dB |
-| 12–20 kHz | −5.80 dB | −4.31 dB |
-
-The updated Repair uses a +3 dB/oct detection tilt, a broad relative envelope,
-and a relative floor inside the consonant. It therefore follows the supplied
-example much more closely while staying independent of input level. It keeps
-1 ms attack and 30 ms release. The percentage lowers Repair's own threshold;
-there is no hard range cap.
-
-The original numeric threshold of −52.2 dB cannot be copied as an absolute FFT
-value: SpecCraft's display calibration and internal normalization are unknown.
-The plugin recreates the observed behavior using a relative threshold. This is
-also more stable when the vocal recording level changes.
-
-Recommended first listening positions:
-
-- Repair 35–50% for normal cleanup.
-- Repair 55–70% for the deliberately strong SpecCraft-style correction.
-- Wide/Split at zero while calibrating Repair; then add them after the repaired
-  consonant shape is acceptable.
+The additional `split.wav` and `no split.wav` examples align with the original
+vocal at 9.333 s. Their difference is concentrated around 0.7–0.95 s of the
+excerpt. With Threshold −52.2, Ratio 6.5:1 and Low −12 dB, the old full-phrase
+render reduced voiced lows during the sibilant tail. Tonality-protected Low
+makes the revised 0.85–0.95 s output agree with the manually split version to
+better than −88 dB RMS difference in each 50 ms window.

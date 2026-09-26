@@ -1,119 +1,67 @@
-# Deess Pocket — DSP and JUCE design specification
+# Deess Pocket — current DSP and interface specification
 
-## 1. Product intent
+## Audio
 
-Treat harsh Russian and other vocal sibilants in three independent but
-simultaneous ways: reduce the whole consonant (Wide), reduce its upper band
-(Split), and selectively reduce unusually strong spectral peaks (Repair).
-The global Threshold controls Wide and Split amount; Repair has its own local
-spectral threshold but uses the same consonant event gate. No knob silently
-alters another knob's range.
+The linked stereo detector identifies sibilant frames before any user threshold
+is applied. It uses high-frequency energy, spectral share, centroid, flatness,
+level, and hysteresis. The 2048-sample STFT with 256-sample hops provides
+2047 samples of fixed latency, including bypass. A common mask on both channels
+preserves stereo balance.
 
-## 2. Signal and control graph
+Four controls, all automatable:
 
-```text
-mono/stereo input ──► fixed STFT latency ──► Wide × Split × Repair ──► output
-                       │                       ▲       ▲       ▲
-                       └─► consonant detector ─┴───────┴───────┘
-                                          │
-                                      Threshold ──► Wide, Split only
-```
+| Parameter | Range / default | Processing |
+| --- | --- | --- |
+| Threshold | −90…0 dBFS / −52.2 dBFS | Horizontal absolute per-bin threshold in the spectral band above 3 kHz when a sibilant is detected. |
+| Ratio | 1:1…20:1 and ∞:1 / 4:1 | Reduces each bin's positive excess over Threshold by `1 − 1/ratio`; at ∞:1 the full excess is removed. No range cap. |
+| Low | −12…0 dB / 0 dB | Dynamic low shelf with 600 Hz midpoint, fading between about 300 Hz and 1.2 kHz. It protects tonal voiced lows during overlapping consonants. |
+| Sibilance Gain | −12…+12 dB / 0 dB | Adds the same signed dB gain to every detected sibilant, regardless of its original level. |
 
-The spectrum is analysed in frames. The detector's confidence must be computed
-before applying the adjustable Threshold. Hysteresis opens and closes the
-event gate. The threshold may be set to −∞ without turning every vowel into
-an event. Spectral score alone cannot guarantee Pro-DS-level selectivity;
-evaluate false positives with real vocals and refine the detector.
+Repair uses approximately 1 ms attack and 30 ms release for each spectral bin,
+starting only at 3 kHz with a short 3–3.5 kHz transition. The detector's
+high-band sidechain starts at 3 kHz. Low has its own fast 6 ms release and
+turns down when the sub-600 Hz spectrum is tonal, protecting overlapping voiced
+material. The event gain envelope uses 1/30 ms timing. Low and Sibilance Gain
+do not alter vowels while the gate is closed. The three dB contributions sum into one
+spectral gain mask and one inverse STFT. The processing threshold is measured
+on the plugin's normalized Hann-window FFT bins; the numeric −52.2 dB setting
+is a starting value, not a calibration claim about SpecCraft's display.
 
-**Wide and Split:** once the gate is open, high-band level above Threshold
-determines the gain-reduction drive. Their control percentages map to separate
-maximum reductions of 0–12 dB. Wide gain applies to all bins. Split gain
-follows a smooth high shelf from 3–6 kHz. Their dB reductions add, so both
-100% settings can mean up to 24 dB above the split frequency; this needs
-listening validation and perhaps a soft combined guard in a later iteration.
+The detector is a heuristic. It identifies all nine user-marked consonants in
+the supplied vocal, but further listening and false-positive evaluation are
+needed for breaths, bleed, plosives and mixed music.
 
-**Repair:** calculate a narrow-smoothed magnitude spectrum and compare it to
-a broad relative envelope of the same frame, tilted by +3 dB/oct for detection.
-At 0% the stage is off; increasing the control lowers its own threshold from
-+14 toward −8 dB relative to that envelope. Attenuate the positive excess, with attack approximately 1 ms
-and release 30 ms, after an event is detected. No user-facing Range limit;
-bounded numeric operations and smoothing remain necessary. Do not flatten the
-natural broad envelope of /с/, /ш/ or /щ/. The static photo's SpecCraft before
-and after charts demonstrate one example; they do not establish an ideal
-frequency response to impose on all singers.
+## Visual design for JUCE
 
-### Technical cautions
+Canvas: 1536 × 922 reference coordinates, uniformly scaled at 100%, 110%,
+125%, 150% or 200%. Use SF Pro Display on macOS, Segoe UI on Windows.
 
-- A true wide path reduces the **entire** spectrum. Any persistent cyan curve
-  that acts as a high shelf, as in the mockup, would be visually misleading.
-  Draw measured reduction in playback; use sample curves only in mockups.
-- The user's 4 kHz split is treated as the midpoint of a transition, not a
-  brick-wall split. Abrupt time-varying bin gains introduce ringing and noise.
-- Repair's ratio is about excess above its local spectral threshold, not an
-  absolute FFT-bin dBFS ceiling. This makes it less sensitive to recording
-  level and follows the selected “relative to shape” behavior.
-- Two independently calculated STFT outputs would risk phase and latency
-  misalignment. Apply one combined gain mask to one STFT stream and perform
-  one inverse transform.
-- Use the same mask on L/R for a linked mono or stereo vocal. Separate stereo
-  detection can be explored later; dual-mono would change stereo balance.
-- Always report fixed processing latency, including in bypass. At 44.1, 48,
-  96 kHz it is 2047 samples, so the time duration changes with sample rate.
-
-## 3. Visual reference — coordinate brief for JUCE
-
-Reference canvas: **1536 × 922 px**. Use vector/native drawing in reference
-coordinates; scale coordinates and fonts together. No flattened screenshot as
-the actual UI. Inputs stay attached to JUCE parameters and host automation.
-
-| Element | Reference location / behavior |
+| Element | Specification |
 | --- | --- |
-| Top bar | y=0–103, deep blue-black, thin separator near y=103. |
-| Menu icon | Three 27 px hairlines near x=37–64, y=33/41/49. Click target larger than icon. |
-| Product title | `DEESS`, centered at x≈768, y≈10–53, size ≈35 px, light weight and spacious tracking. |
-| Series subtitle | `POCKET SERIES`, centered near y=60–70, size ≈10 px with wide tracking; thin side rules. |
-| Power | Center x≈1486, y≈47; ~41 px circular hairline and simple broken-circle glyph. No text. |
-| Main panel | x=0–1536, y=104–922; near-black navy, subtle blue haze, no prominent frame. |
-| Grid | Fine vertical logarithmic lines, frequency labels 20, 50, 100, 200, 500, 1k, 2k, 5k, 10k, 20k along y≈885. Horizontal guides lightly drawn every 6 dB, reduction marks on the right. |
-| Spectrum | Pearl-grey jagged top line with translucent area fading down. Frequency log from 20 Hz to 20 kHz. Analyzer display sits behind the controls. |
-| Reduction traces | Delicate cyan, yellow and magenta paths, visible near top. Show real Wide, Wide+Split and combined reduction, respectively; no hard-coded graphic behavior. |
-| Control row | Centers x≈475, 666, 855, 1048; labels at y≈690; arc and 120 px dark face near y≈766; values at y≈844. Lower-center placement. |
-| Dial colors | Threshold nearly white, Wide cyan, Split yellow, Repair magenta; dim inactive arc, thin bright active arc, subtle glow, small white radial pointer. |
-| Bypass view | Header, menu and power remain sharp and clickable. Blur/dim only y≥104. Large centered `BYPASS` text around the middle of that region. Audio switches via short crossfade to latency-matched dry. |
+| Header | y=0–103; centered thin DEESS near y=11–58; tiny tracked POCKET SERIES near y=55–75; three menu hairlines x=37–64; power ring centered around 1486,47. |
+| Main field | Deep navy layered radial and vertical gradient, slightly brighter around spectrum and controls, dark edges. No visible rectangular button backgrounds. |
+| Analyzer | Live 1024-point logarithmic plot, frequency 20 Hz–20 kHz, x=36–1480; bright pearl contour, several translucent glow strokes and a white/steel blue fill fading into the dark lower field. |
+| Grid | Hairline logarithmic verticals, subtle 6 dB horizontals, labels at y≈885 and right edge. Keep it under the live signal. |
+| Repair | Thin magenta horizontal input threshold indicator starting at 3 kHz; one vivid magenta response curve with a soft multi-pass glow, tracking the signed combined gain. |
+| Controls | Centers x=475,666,855,1048; labels near y=690; dark shaded 112 px face, luminous fine arcs and short white pointer; values near y=844. Labels THRESHOLD, RATIO, LOW, SIBILANCE GAIN. |
+| Bypass | Header and controls in header remain sharp. Blur/dim only y≥104, with centered BYPASS text. Cache the blurred lower snapshot before a click; visual state flips immediately. |
 
-Rename the screenshot's `SPECTR` label to `REPAIR`. Slider values: Threshold
-in dB, the other three as whole percentages. Use the platform's system font:
-SF Pro Display on macOS if available, Segoe UI on Windows, native sans fallback
-otherwise. The product title should remain thin; kerning and placement matter
-more than forcing a particular font weight.
+The native JUCE drawing contains live graph paths and vector controls. The
+embedded background and dial-face images are generated assets, not a flattened
+image of the reference. Glow is drawn into quarter-resolution images, blurred
+and cached: the response about 15 times a second and each dial only when its
+value changes. This keeps the diffuse light independent of the audio thread
+without a Skia dependency. Bypass snapshot blur also happens only on the
+message thread at low resolution, never on the audio callback or click.
 
-Left menu: scale 100%, 110%, 125%, 150%, 200%. Spectrum submenu: Pre on/off,
-Speed Fast/Medium/Slow, Resolution Low/Medium/High/Maximum, Range 60/90/120 dB and Tilt
-0/3/4.5 dB/oct. Defaults: Fast, High, 90 dB, 3 dB/oct. These are analyzer
-preferences; they must not alter the processing transfer function. The current
-The four analyzer resolutions use 1024/2048/4096/8192-point FFTs. The processing
-STFT remains fixed at 2048 points and is unaffected by display preferences.
+Spectrum menu: Fast/Medium/Slow, FFT resolution 1024/2048/4096/8192, display
+range 60/90/120 dB, tilt 0/3/4.5 dB per octave. Defaults Fast/High/90/+3.
+These settings change only the display.
 
-## 4. Acceptance checks for a production candidate
+## Validation
 
-1. Label and render real Russian /с, сь, ш, щ/ at different levels, plus
-   vowels, breaths, /т/, hi-hat bleed and consonants overlapping singing.
-   Measure recall and false positives at Threshold minimum and typical values.
-2. Compare aligned original, processed and delta at each stage alone and in
-   combination. Determine whether Repair removes abnormal whistles without
-   making /с/ lisp, chirp or collapse into flat noise.
-3. Test mono, linked stereo, all target sample rates, host automation,
-   silence/denormals, block size changes, save/restore, transport seeking and
-   bypass through the DAW and host bypass.
-4. Confirm constant latency with an impulse and exact delayed dry bypass;
-   build and run VST3/Standalone in JUCE, then pluginval on release binaries.
-5. Profile DSP and UI in Pro Tools/Reaper; the display must not affect audio
-   callback timing. Test macOS SF and Windows Segoe on standard and HiDPI.
-
-## 5. Documentation reviewed
-
-- [FabFilter Pro-DS basic controls](https://www.fabfilter.com/help/pro-ds/using/basiccontrols): its Single Vocal mode separates sibilance from non-sibilance before thresholding; at −∞ dB its sibilants receive roughly equal reduction.
-- [FabFilter Pro-DS advanced controls](https://www.fabfilter.com/help/pro-ds/using/advancedcontrols): wide/full-band versus split-band, up to 15 ms lookahead, and program-dependent choices.
-- [Three-Body Technology SpecCraft](https://www.threebodytech.com/en/products/speccraft): spectral resonance suppression, adaptive threshold, lookahead, spectrum slope and compensation. Its actual internals are proprietary; the downloadable manual timed out in this session.
-- [FabFilter Pro-Q 4 analyzer](https://www.fabfilter.com/help/pro-q/using/analyzer): range, resolution, speed and tilt definitions. Its High resolution is 4096 points, Maximum 8192, rather than an arbitrary visual-detail setting.
-- [JUCE AudioProcessor](https://docs.juce.com/master/classjuce_1_1AudioProcessor.html): latency reporting through `setLatencySamples`.
+Measure input/processed/delta at each marked consonant and listen for lisp,
+chirp, pumping, breaths and plosives. Verify automation, state restore, block
+sizes, sample rates, stereo balance, impulse latency, host bypass and UI
+performance in actual DAWs. CI builds macOS universal and Windows x64 VST3/AAX
+and runs core tests and pluginval; unsigned CI binaries need signing for release.

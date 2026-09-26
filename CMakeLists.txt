@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(DeessPocket VERSION 0.2.0 LANGUAGES CXX)
+project(DeessPocket VERSION 0.3.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -51,4 +51,13 @@ if(DEESS_BUILD_PLUGIN)
     target_link_libraries(DeessPocket PRIVATE deess_core DeessArtwork juce::juce_audio_utils juce::juce_dsp)
     target_compile_definitions(DeessPocket PUBLIC JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
     juce_generate_juce_header(DeessPocket)
+    if(APPLE)
+        juce_add_console_app(deess_ui_capture PRODUCT_NAME "Deess UI Capture")
+        target_sources(deess_ui_capture PRIVATE Tools/CaptureUI.cpp
+            Source/Plugin/PluginProcessor.cpp Source/Plugin/PluginEditor.cpp)
+        target_link_libraries(deess_ui_capture PRIVATE deess_core DeessArtwork
+            juce::juce_audio_utils juce::juce_dsp)
+        target_compile_definitions(deess_ui_capture PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+        juce_generate_juce_header(deess_ui_capture)
+    endif()
 endif()

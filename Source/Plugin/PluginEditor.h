@@ -11,15 +11,23 @@ public:
     void paint(juce::Graphics&) override;
     void paintOverChildren(juce::Graphics&) override;
     void resized() override;
+    void refreshForSnapshot() { timerCallback(); }
 
 private:
     struct DialStyle final : juce::LookAndFeel_V4 {
         void drawRotarySlider(juce::Graphics&, int, int, int, int, float, float, float,
                               juce::Slider&) override;
     } style;
+    struct ChromeStyle final : juce::LookAndFeel_V4 {
+        void drawButtonBackground(juce::Graphics&, juce::Button&, const juce::Colour&,
+                                  bool, bool) override {}
+        void drawButtonText(juce::Graphics&, juce::TextButton&, bool, bool) override {}
+    } chromeStyle;
     void timerCallback() override;
     void showMenu();
     void updateBypassSnapshot();
+    void updateResponseGlow();
+    void updateDialGlow(int index);
     juce::Font font(float size) const;
     DeessPocketProcessor& processor;
     std::array<juce::Slider, 4> dials;
@@ -31,8 +39,13 @@ private:
     std::array<DeessPocketProcessor::StereoSample, 4096> analyzerInput{};
     juce::Image background;
     juce::Image bypassSnapshot;
+    juce::Image responseGlow;
+    std::array<juce::Image, 4> dialGlows;
+    std::array<double, 4> glowValues{{-1000.0, -1000.0, -1000.0, -1000.0}};
     bool previousBypass = false;
     bool capturingSnapshot = false;
+    int snapshotCounter = 44;
+    int glowFrame = 1;
     int zoom = 100, speed = 0, detail = 2, range = 90;
     float tilt = 3.0f;
     bool showPre = true;

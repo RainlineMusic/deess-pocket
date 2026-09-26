@@ -9,23 +9,21 @@ constexpr int hopSize = 256;
 constexpr int displayBands = 256;
 
 struct Controls {
-    float thresholdDb = -24.0f; // -72 .. 0; -72 approximates -infinity only within a confirmed event
-    float wide = 0.55f;        // 0 .. 1, maps to 0 .. 12 dB maximum reduction
-    float split = 0.70f;       // 0 .. 1, maps to 0 .. 12 dB maximum reduction
-    float repair = 0.40f;      // 0 .. 1, lowers local prominence threshold
+    float thresholdDb = -52.2f; // absolute bin threshold, dBFS
+    float ratio = 4.0f;         // 1 .. 20, 21 denotes infinity
+    float lowDb = 0.0f;         // -12 .. 0 dB, dynamic shelf below 600 Hz
+    float sibilanceGainDb = 0.0f; // -12 .. +12 dB, same offset for every event
     bool bypass = false;
 };
 
 struct Meters {
     float confidence = 0.0f;
     float detectorDb = -120.0f;
-    float wideDb = 0.0f;
-    float splitDb = 0.0f;
     float repairPeakDb = 0.0f;
+    float eventGainDb = 0.0f;
     bool event = false;
     std::array<float, displayBands> preSpectrumDb{};
-    std::array<float, displayBands> reductionDb{};
-    std::array<float, displayBands> repairDb{};
+    std::array<float, displayBands> gainDb{};
 };
 
 // Fixed latency, stereo-linked spectral processor; allocate only in prepare().
@@ -53,7 +51,7 @@ private:
     Meters meter;
     float confidenceSmoothed = 0.0f;
     float noiseDb = -85.0f;
-    float wideReduction = 0.0f, splitReduction = 0.0f, bypassMix = 0.0f;
+    float eventEnvelope = 0.0f, lowEnvelope = 0.0f, bypassMix = 0.0f;
     bool eventActive = false;
     std::array<float, fftSize> window{};
     std::array<std::array<float, fftSize>, 2> input{};
@@ -61,11 +59,9 @@ private:
     std::array<std::array<float, ringSize>, 2> overlap{};
     std::array<float, ringSize> norm{};
     std::array<Spectrum, 2> spectra{};
-    std::array<float, fftSize / 2 + 1> magnitudes{}, smoothed{};
-    std::array<float, fftSize / 2 + 2> prefix{};
-    std::array<float, fftSize / 2 + 1> repairSmoothed{}, tiltDb{}, shelfWeight{};
-    std::array<int, fftSize / 2 + 1> envelopeLo{}, envelopeHi{};
+    std::array<float, fftSize / 2 + 1> magnitudes{};
+    std::array<float, fftSize / 2 + 1> repairSmoothed{}, lowShelfWeight{}, repairBandWeight{};
     float bypassCoefficient = 0.0f, repairAttack = 0.0f, repairRelease = 0.0f;
-    float binLevelCorrection = 0.0f;
+    float lowRelease = 0.0f;
 };
 } // namespace deess

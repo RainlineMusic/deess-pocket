@@ -20,22 +20,37 @@ for f in [20,50,100,200,500,1000,2000,5000,10000,20000]:
 for db in range(0,-61,-6):
  y=162-db*9;d.line((15,y,1482,y),fill=(35,62,76,115),width=1);d.text((1488,y),str(db)+(' dB' if db==0 else ''),font=font(13),anchor='lm',fill=(171,185,194,235))
 # plausible analyzer landscape
-freq=np.geomspace(20,20000,420); log=np.log10(freq);spec=-72+34*np.exp(-((log-2.55)/.58)**2)-11*np.maximum(log-3.85,0)
+freq=np.geomspace(20,20000,420); log=np.log10(freq)
+spec=np.interp(log,np.log10([20,50,100,200,400,1000,2000,5000,10000,20000]),
+               [-55,-43,-28,-12,-20,-23,-27,-31,-38,-52])
 rng=np.random.default_rng(4);spec+=rng.normal(0,2.5,len(freq))*np.clip((log-1.4),0,1)
 y=np.clip(812-(spec+90)*650/90,145,862);pts=[(fx(f),v) for f,v in zip(freq,y)]
 poly=pts+[(right,862),(left,862)]
-fill=Image.new('RGBA',im.size);fd=ImageDraw.Draw(fill);fd.polygon(poly,fill=(174,188,197,65));fd.line(pts,fill=(197,209,216,150),width=1);im=Image.alpha_composite(im,fill);d=ImageDraw.Draw(im)
-# response curves
-for color,depth,start in [((0,220,250,230),11,3500),((255,207,0,240),11,2300),((244,0,235,240),18,1850)]:
- q=[]
- for f in freq:
-  red=depth/(1+math.exp(-5*(math.log2(f/start))))
-  if color[0]>200 and color[2]>200:red+=6*math.exp(-((math.log(f/3200)/.13)**2))+7*math.exp(-((math.log(f/4800)/.12)**2))+6*math.exp(-((math.log(f/8200)/.1)**2))
-  q.append((fx(f),162+red*9))
- glow=Image.new('RGBA',im.size);gd=ImageDraw.Draw(glow);gd.line(q,fill=color[:-1]+(90,),width=10);glow=glow.filter(ImageFilter.GaussianBlur(9));im=Image.alpha_composite(im,glow);d=ImageDraw.Draw(im);d.line(q,fill=color,width=2)
+mask=Image.new('L',im.size);ImageDraw.Draw(mask).polygon(poly,fill=255)
+yy=np.arange(922)[:,None];a=np.clip(105*(1-yy/922)**1.6+8,8,110).astype('uint8')
+alpha=np.repeat(a,1536,axis=1)
+fill=Image.new('RGBA',im.size,(220,235,245,0))
+fill.putalpha(Image.fromarray(np.minimum(np.asarray(mask),alpha)))
+im=Image.alpha_composite(im,fill);d=ImageDraw.Draw(im)
+glow=Image.new('RGBA',im.size);ImageDraw.Draw(glow).line(pts,fill=(239,248,255,180),width=5)
+im=Image.alpha_composite(im,glow.filter(ImageFilter.GaussianBlur(6)));d=ImageDraw.Draw(im)
+d.line(pts,fill=(245,251,255,230),width=2)
+# Absolute repair threshold and one active signed response example.
+threshold_y=812-(-52.2+90)*650/90
+line=Image.new('RGBA',im.size);ImageDraw.Draw(line).line((fx(3000),threshold_y,right,threshold_y),fill=(255,24,237,140),width=2)
+im=Image.alpha_composite(im,line.filter(ImageFilter.GaussianBlur(4)));d=ImageDraw.Draw(im)
+d.line((fx(3000),threshold_y,right,threshold_y),fill=(255,24,237,140),width=1)
+q=[]
+for f in freq:
+ red=12/(1+math.exp(-5*(math.log2(f/2500))))
+ red+=4*math.exp(-((math.log(f/4200)/.15)**2))
+ q.append((fx(f),162+red*9))
+glow=Image.new('RGBA',im.size);ImageDraw.Draw(glow).line(q,fill=(255,24,237,130),width=10)
+im=Image.alpha_composite(im,glow.filter(ImageFilter.GaussianBlur(9)));d=ImageDraw.Draw(im)
+d.line(q,fill=(255,24,237,255),width=2)
 # dials precise reference centres / radii
 face=Image.open(assets/'dial-face.png').resize((112,112),Image.Resampling.LANCZOS)
-centres=[475,666,855,1048];colors=[(230,241,246),(0,217,250),(255,207,0),(244,0,235)];names=['THRESHOLD','WIDE','SPLIT','REPAIR'];vals=['−24.0 dB','55%','70%','40%'];props=[.67,.55,.70,.40]
+centres=[475,666,855,1048];colors=[(230,241,246),(255,24,237),(255,24,237),(255,24,237)];names=['THRESHOLD','RATIO','LOW','SIBILANCE GAIN'];vals=['−52.2 dB','4.0:1','0.0 dB','0.0 dB'];props=[.42,.15,1,.5]
 for cx,c,name,val,p in zip(centres,colors,names,vals,props):
  d.text((cx,690),name,font=font(17),anchor='mm',fill=pale)
  im.alpha_composite(face,(cx-56,716));d=ImageDraw.Draw(im)

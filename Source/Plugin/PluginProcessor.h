@@ -40,14 +40,13 @@ private:
     void process(juce::AudioBuffer<float>&, bool hostBypass) noexcept;
     deess::Engine engine;
     std::atomic<float>* threshold = nullptr;
-    std::atomic<float>* wide = nullptr;
-    std::atomic<float>* split = nullptr;
-    std::atomic<float>* repair = nullptr;
+    std::atomic<float>* ratio = nullptr;
+    std::atomic<float>* low = nullptr;
+    std::atomic<float>* sibilanceGain = nullptr;
     std::atomic<float>* bypass = nullptr;
     // Meter fields are atomic. Analyzer audio uses a separate SPSC FIFO.
     std::atomic<float> confidenceDisplay{0}, detectorDisplay{-120};
-    std::atomic<float> wideDisplay{0}, splitDisplay{0};
-    std::array<std::atomic<float>, deess::displayBands> repairDisplay{};
+    std::array<std::atomic<float>, deess::displayBands> gainDisplay{};
     std::atomic<bool> hostBypassDisplay{false};
     juce::AbstractFifo analyzerFifo{32768};
     std::array<StereoSample,32768> analyzerAudio{};
