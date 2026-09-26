@@ -336,15 +336,6 @@ void DeessPocketEditor::paint(juce::Graphics& g) {
                     juce::RectanglePlacement::stretchToFit);
         g.setOpacity(1.0f);
     }
-    {
-        juce::Path aura = response;
-        aura.lineTo(lastX, 500.0f);
-        aura.lineTo(firstX, 500.0f);
-        aura.closeSubPath();
-        g.setGradientFill(juce::ColourGradient(magenta.withAlpha(.09f), 0, 195,
-                                               magenta.withAlpha(0.0f), 0, 500, false));
-        g.fillPath(aura);
-    }
     g.setColour(magenta.withAlpha(.16f));
     g.strokePath(response, juce::PathStrokeType(5.0f));
     g.setColour(magenta);
