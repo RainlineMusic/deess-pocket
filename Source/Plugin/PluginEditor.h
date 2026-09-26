@@ -26,6 +26,8 @@ private:
     void timerCallback() override;
     void showMenu();
     void updateBypassSnapshot();
+    void updateResponseGlow();
+    void updateDialGlow(int index);
     juce::Font font(float size) const;
     DeessPocketProcessor& processor;
     std::array<juce::Slider, 4> dials;
@@ -37,9 +39,13 @@ private:
     std::array<DeessPocketProcessor::StereoSample, 4096> analyzerInput{};
     juce::Image background;
     juce::Image bypassSnapshot;
+    juce::Image responseGlow;
+    std::array<juce::Image, 4> dialGlows;
+    std::array<double, 4> glowValues{{-1000.0, -1000.0, -1000.0, -1000.0}};
     bool previousBypass = false;
     bool capturingSnapshot = false;
     int snapshotCounter = 44;
+    int glowFrame = 1;
     int zoom = 100, speed = 0, detail = 2, range = 90;
     float tilt = 3.0f;
     bool showPre = true;

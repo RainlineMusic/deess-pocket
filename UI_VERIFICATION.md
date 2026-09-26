@@ -14,11 +14,12 @@ the same aspect ratio. The normalized locations are maintained:
 
 The revised background adds layered navy and blue haze with a darker vignette.
 The live analyzer uses a brighter pearl contour with multiple faint glow
-strokes and a graduated fill. Dial arcs use three soft strokes beneath the
-sharp stroke. A single magenta trace shows live combined spectral gain; a
+strokes and a graduated fill. Dial arcs have a cached Gaussian-blurred halo
+beneath the sharp stroke. A single magenta trace shows live combined spectral gain; a
 separate thin horizontal line beginning at 3 kHz indicates the absolute Repair threshold.
 The dial halo is drawn by the parent editor so the child's hit-area rectangle
-cannot clip it. macOS and Windows request the platform Light font style.
+cannot clip it. The response glow is cached at quarter resolution and updated
+around 15 Hz. macOS and Windows request the platform Light font style.
 
 Both header hit targets use a transparent JUCE look and feel, eliminating
 default button borders. Bypass freezes a precomputed blurred lower-region

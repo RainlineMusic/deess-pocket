@@ -18,9 +18,9 @@ int main(int argc, char** argv) {
     for (int offset = 0; offset < 24576; offset += block.getNumSamples()) {
         for (int i = 0; i < block.getNumSamples(); ++i) {
             const auto time = float(offset + i) / 48000.0f;
-            const float voice = 0.18f * std::sin(juce::MathConstants<float>::twoPi * 215.0f * time)
-                              + 0.075f * std::sin(juce::MathConstants<float>::twoPi * 430.0f * time)
-                              + 0.055f * noise(rng);
+            const float voice = 0.12f * std::sin(juce::MathConstants<float>::twoPi * 215.0f * time)
+                              + 0.055f * std::sin(juce::MathConstants<float>::twoPi * 430.0f * time)
+                              + 0.20f * noise(rng);
             block.setSample(0, i, voice);
             block.setSample(1, i, voice);
         }

@@ -36,12 +36,8 @@ void DeessPocketEditor::DialStyle::drawRotarySlider(juce::Graphics& g, int x, in
                 juce::RectanglePlacement::stretchToFit);
     g.setColour(juce::Colour(0xff50606a).withAlpha(.55f));
     g.strokePath(ring, juce::PathStrokeType(2.5f));
-    g.setColour(colour.withAlpha(.055f));
-    g.strokePath(active, juce::PathStrokeType(29.0f));
-    g.setColour(colour.withAlpha(.12f));
-    g.strokePath(active, juce::PathStrokeType(16.0f));
-    g.setColour(colour.withAlpha(.31f));
-    g.strokePath(active, juce::PathStrokeType(8.0f));
+    g.setColour(colour.withAlpha(.08f));
+    g.strokePath(active, juce::PathStrokeType(9.0f));
     g.setColour(colour);
     g.strokePath(active, juce::PathStrokeType(3.6f));
     const float angle = start + proportion * (end - start);
@@ -62,6 +58,7 @@ DeessPocketEditor::DeessPocketEditor(DeessPocketProcessor& p)
         dials[i].setRotaryParameters(1.25f * pi, 2.75f * pi, true);
         dials[i].setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
         dials[i].setLookAndFeel(&style);
+        dials[i].onValueChange = [this] { repaint(); };
         addAndMakeVisible(dials[i]);
         attachments[i] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
             processor.params, ids[i], dials[i]);
@@ -125,12 +122,56 @@ void DeessPocketEditor::timerCallback() {
                             : current + release * (visualSpectrum[i] - current);
     }
     const bool bypassNow = powerButton.getToggleState() || processor.hostBypassed();
+    if (++glowFrame % 2 == 0 || !responseGlow.isValid()) updateResponseGlow();
     if (!bypassNow && ++snapshotCounter >= 45) {
         snapshotCounter = 0;
         updateBypassSnapshot();
     }
     previousBypass = bypassNow;
     repaint();
+}
+
+void DeessPocketEditor::updateResponseGlow() {
+    constexpr int width = baseWidth / 4, height = baseHeight / 4;
+    juce::Image source(juce::Image::ARGB, width, height, true);
+    juce::Graphics pg(source);
+    pg.addTransform(juce::AffineTransform::scale(.25f));
+    juce::Path curve;
+    for (int i = 0; i < deess::displayBands; ++i) {
+        const float f = 20.0f * std::pow(1000.0f, i / float(deess::displayBands - 1));
+        const float x = 36.0f + std::log(f / 20.0f) / std::log(1000.0f) * (1480.0f - 36.0f);
+        const float y = responseY(display.gainDb[i]);
+        if (i == 0) curve.startNewSubPath(x, y);
+        else curve.lineTo(x, y);
+    }
+    pg.setColour(magenta.withAlpha(.9f));
+    pg.strokePath(curve, juce::PathStrokeType(7.0f));
+    responseGlow = juce::Image(juce::Image::ARGB, width, height, true);
+    juce::ImageConvolutionKernel blur(13);
+    blur.createGaussianBlur(4.0f);
+    blur.applyToImage(responseGlow, source, source.getBounds());
+}
+
+void DeessPocketEditor::updateDialGlow(int index) {
+    const double value = dials[index].getValue();
+    if (dialGlows[index].isValid() && std::abs(glowValues[index] - value) < .001) return;
+    glowValues[index] = value;
+    constexpr int n = 128;
+    juce::Image source(juce::Image::ARGB, n, n, true);
+    juce::Graphics pg(source);
+    pg.addTransform(juce::AffineTransform::scale(n / 230.0f));
+    const float fraction = juce::jlimit(0.0f, 1.0f,
+        float((value - dials[index].getMinimum()) /
+              (dials[index].getMaximum() - dials[index].getMinimum())));
+    juce::Path active;
+    active.addCentredArc(115.0f, 115.0f, 54.7f, 54.7f, 0,
+                         1.25f * pi, (1.25f + fraction * 1.5f) * pi, true);
+    pg.setColour((index == 0 ? pale : magenta).withAlpha(.94f));
+    pg.strokePath(active, juce::PathStrokeType(9.0f));
+    dialGlows[index] = juce::Image(juce::Image::ARGB, n, n, true);
+    juce::ImageConvolutionKernel blur(13);
+    blur.createGaussianBlur(4.0f);
+    blur.applyToImage(dialGlows[index], source, source.getBounds());
 }
 
 void DeessPocketEditor::updateBypassSnapshot() {
@@ -258,6 +299,12 @@ void DeessPocketEditor::paint(juce::Graphics& g) {
     g.setGradientFill(juce::ColourGradient(magenta.withAlpha(.20f), 0, 180,
                                            magenta.withAlpha(.005f), 0, 850, false));
     g.fillPath(responseFill);
+    if (responseGlow.isValid()) {
+        g.setOpacity(.80f);
+        g.drawImage(responseGlow, juce::Rectangle<float>(0, 0, baseWidth, baseHeight),
+                    juce::RectanglePlacement::stretchToFit);
+        g.setOpacity(1.0f);
+    }
     const bool active = std::any_of(display.gainDb.begin(), display.gainDb.end(),
                                     [](float db) { return std::abs(db) > .5f; });
     if (active) {
@@ -269,29 +316,31 @@ void DeessPocketEditor::paint(juce::Graphics& g) {
                                                magenta.withAlpha(0.0f), 0, 500, false));
         g.fillPath(aura);
     }
-    g.setColour(magenta.withAlpha(.065f));
-    g.strokePath(response, juce::PathStrokeType(32.0f));
-    g.setColour(magenta.withAlpha(.13f));
-    g.strokePath(response, juce::PathStrokeType(15.0f));
-    g.setColour(magenta.withAlpha(.30f));
-    g.strokePath(response, juce::PathStrokeType(6.0f));
+    g.setColour(magenta.withAlpha(.16f));
+    g.strokePath(response, juce::PathStrokeType(5.0f));
     g.setColour(magenta);
     g.strokePath(response, juce::PathStrokeType(1.8f));
 
     const char* names[] = {"THRESHOLD", "RATIO", "LOW", "SIBILANCE GAIN"};
     const int cx[] = {475, 666, 855, 1048};
     for (int i = 0; i < 4; ++i) {
+        updateDialGlow(i);
         const auto colour = i == 0 ? pale : magenta;
         g.setGradientFill(juce::ColourGradient(colour.withAlpha(.13f), float(cx[i]), 767.0f,
                                                colour.withAlpha(0.0f), float(cx[i] + 115),
                                                767.0f, true));
         g.fillEllipse(float(cx[i] - 115), 652.0f, 230.0f, 230.0f);
+        g.setOpacity(.85f);
+        g.drawImage(dialGlows[i], juce::Rectangle<float>(float(cx[i] - 115), 652.0f,
+                                                         230.0f, 230.0f),
+                    juce::RectanglePlacement::stretchToFit);
+        g.setOpacity(1.0f);
     }
-    g.setColour(pale);
+    g.setColour(pale.withAlpha(.84f));
     for (int i = 0; i < 4; ++i) {
-        g.setFont(font(17));
+        g.setFont(font(16));
         g.drawText(names[i], cx[i] - 90, 674, 180, 31, juce::Justification::centred);
-        g.setFont(font(21));
+        g.setFont(font(20));
         const auto v = dials[i].getValue();
         const juce::String value = i == 0 ? juce::String(v, 1) + " dB"
             : i == 1 ? (v >= 20.5 ? juce::String::fromUTF8("∞:1")

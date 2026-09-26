@@ -48,9 +48,11 @@ Canvas: 1536 × 922 reference coordinates, uniformly scaled at 100%, 110%,
 
 The native JUCE drawing contains live graph paths and vector controls. The
 embedded background and dial-face images are generated assets, not a flattened
-image of the reference. Several low-opacity strokes give glow without a Skia
-dependency or per-frame Gaussian convolution. Snapshot blur happens only on
-the message thread at low resolution; never on the audio callback or click.
+image of the reference. Glow is drawn into quarter-resolution images, blurred
+and cached: the response about 15 times a second and each dial only when its
+value changes. This keeps the diffuse light independent of the audio thread
+without a Skia dependency. Bypass snapshot blur also happens only on the
+message thread at low resolution, never on the audio callback or click.
 
 Spectrum menu: Fast/Medium/Slow, FFT resolution 1024/2048/4096/8192, display
 range 60/90/120 dB, tilt 0/3/4.5 dB per octave. Defaults Fast/High/90/+3.
